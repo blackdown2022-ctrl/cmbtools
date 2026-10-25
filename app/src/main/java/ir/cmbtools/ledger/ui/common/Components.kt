@@ -237,10 +237,14 @@ fun JalaliDateField(
             onValueChange = {},
             readOnly = true,
             label = { Text(label) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { showDialog = true },
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp)
+        )
+        // یک لایهٔ شفاف روی فیلد تا لمس، همیشه تقویم را باز کند
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clickable { showDialog = true }
         )
         if (showDialog) {
             JalaliPickerDialog(

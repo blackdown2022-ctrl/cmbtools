@@ -46,6 +46,7 @@ import ir.cmbtools.ledger.core.Money
 import ir.cmbtools.ledger.core.PaymentMethod
 import ir.cmbtools.ledger.ui.AppViewModel
 import ir.cmbtools.ledger.ui.common.AmountField
+import ir.cmbtools.ledger.ui.common.DropdownField
 import ir.cmbtools.ledger.ui.common.EmptyState
 import ir.cmbtools.ledger.ui.common.GradientHeader
 import ir.cmbtools.ledger.ui.common.JalaliDateField
@@ -67,11 +68,13 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
     val payments by vm.customerPayments(customerId).collectAsStateWithLifecycle(initialValue = emptyList())
     val ledger by vm.customerLedger(customerId).collectAsStateWithLifecycle(initialValue = emptyList())
     val accounts by vm.customerAccounts(customerId).collectAsStateWithLifecycle(initialValue = emptyList())
+    val plans by vm.plans.collectAsStateWithLifecycle()
 
     var tab by remember { mutableStateOf(0) }
     var showEdit by remember { mutableStateOf(false) }
     var showPayment by remember { mutableStateOf(false) }
     var showAdjust by remember { mutableStateOf(false) }
+    var showRenew by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         GradientHeader(
@@ -144,10 +147,26 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
             }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { vm.sendReminder(customerId) }, modifier = Modifier.weight(1f)) {
-                        Text("یادآوری پیامکی")
+                    if (accounts.isNotEmpty()) {
+                        Button(onClick = { showRenew = true }, modifier = Modifier.weight(1f)) {
+                            Text("تمدید اکانت")
+                        }
+                        OutlinedButton(onClick = { vm.sendReminder(customerId) }, modifier = Modifier.weight(1f)) {
+                            Text("یادآوری")
+                        }
+                    } else {
+                        OutlinedButton(onClick = { vm.sendReminder(customerId) }, modifier = Modifier.weight(1f)) {
+                            Text("یادآوری پیامکی")
+                        }
+                        OutlinedButton(onClick = { showAdjust = true }, modifier = Modifier.weight(1f)) {
+                            Text("تعدیل مانده")
+                        }
                     }
-                    OutlinedButton(onClick = { showAdjust = true }, modifier = Modifier.weight(1f)) {
+                }
+            }
+            if (accounts.isNotEmpty()) {
+                item {
+                    OutlinedButton(onClick = { showAdjust = true }, modifier = Modifier.fillMaxWidth()) {
                         Text("تعدیل مانده")
                     }
                 }
@@ -282,6 +301,16 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
     }
     if (showAdjust) {
         AdjustDialog(vm = vm, customerId = customerId, onDismiss = { showAdjust = false })
+    }
+    if (showRenew && accounts.isNotEmpty()) {
+        RenewDialog(
+            vm = vm,
+            customerId = customerId,
+            panelUuid = accounts.first().panelUserUuid,
+            plans = plans,
+            onDismiss = { showRenew = false },
+            onDone = { showRenew = false }
+        )
     }
 }
 
@@ -428,6 +457,104 @@ private fun AdjustDialog(vm: AppViewModel, customerId: Long, onDismiss: () -> Un
                 vm.adjustBalance(customerId, if (isIncrease) amount else -amount, memo, date)
                 onDismiss()
             }) { Text("ثبت") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("انصراف") } }
+    )
+}
+
+/**
+ * تمدید = دورهٔ جدید در پنل (ریست مصرف + شمارش روز از اتصال بعدی) + فاکتور تمدید + پیامک اختیاری.
+ */
+@Composable
+private fun RenewDialog(
+    vm: AppViewModel,
+    customerId: Long,
+    panelUuid: String,
+    plans: List<ir.cmbtools.ledger.data.Plan>,
+    onDismiss: () -> Unit,
+    onDone: () -> Unit
+) {
+    var plan by remember { mutableStateOf(plans.firstOrNull()) }
+    var gb by remember { mutableStateOf(plans.firstOrNull()?.gb?.toString() ?: "30") }
+    var days by remember { mutableStateOf(plans.firstOrNull()?.days?.toString() ?: "30") }
+    var price by remember { mutableStateOf(plans.firstOrNull()?.priceRial ?: 0L) }
+    var description by remember { mutableStateOf(plans.firstOrNull()?.name ?: "تمدید سرویس") }
+    var sendSms by remember { mutableStateOf(true) }
+    var working by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("تمدید اکانت") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (plans.isNotEmpty()) {
+                    DropdownField(
+                        label = "بستهٔ تمدید",
+                        items = plans,
+                        selected = plan,
+                        itemLabel = { p ->
+                            p.name + " • " + Money.toPersian(p.gb.toString()) + " گیگ / " +
+                                Money.toPersian(p.days.toString()) + " روز"
+                        },
+                        onSelect = { p ->
+                            plan = p
+                            description = p.name
+                            gb = p.gb.toString()
+                            days = p.days.toString()
+                            price = p.priceRial
+                        }
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LabeledField(
+                        "حجم (گیگ)",
+                        gb,
+                        { gb = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                        modifier = Modifier.weight(1f),
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+                    )
+                    LabeledField(
+                        "روز",
+                        days,
+                        { days = it.filter { ch -> ch.isDigit() } },
+                        modifier = Modifier.weight(1f),
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                    )
+                }
+                AmountField("مبلغ فاکتور تمدید (ریال)", price, { price = it })
+                LabeledField("شرح", description, { description = it })
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("ارسال فاکتور با پیامک", style = MaterialTheme.typography.bodyMedium)
+                    androidx.compose.material3.Switch(checked = sendSms, onCheckedChange = { sendSms = it })
+                }
+                Text(
+                    "مصرف اکانت صفر می‌شود و شمارش روزها از اولین اتصال بعدی شروع می‌شود (همان رفتار دکمهٔ تمدید پنل).",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = !working,
+                onClick = {
+                    working = true
+                    vm.renewAccount(
+                        customerId = customerId,
+                        panelUuid = panelUuid,
+                        planId = plan?.id ?: 0,
+                        description = description,
+                        gb = gb.toDoubleOrNull() ?: 0.0,
+                        days = days.toIntOrNull() ?: 0,
+                        priceRial = price,
+                        sendSms = sendSms
+                    ) { working = false; onDone() }
+                }
+            ) { Text(if (working) "در حال تمدید..." else "تمدید کن") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("انصراف") } }
     )

@@ -7,7 +7,7 @@ import ir.cmbtools.ledger.data.BankSmsDao
 import ir.cmbtools.ledger.data.CustomerDao
 import ir.cmbtools.ledger.data.InvoiceDao
 import ir.cmbtools.ledger.data.PaymentRepository
-import ir.cmbtools.ledger.data.Prefs
+import ir.cmbtools.ledger.core.Prefs
 import java.security.MessageDigest
 import java.time.LocalDate
 

@@ -171,7 +171,12 @@ fun ReportsScreen(vm: AppViewModel, nav: NavHostController) {
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
-                    onClick = { ExportManager(context, vm.appContainer()).exportBackup() },
+                    onClick = {
+                        ExportManager(context, vm.appContainer()).exportBackup { r ->
+                            r.onSuccess { vm.report("پشتیبان ساخته شد: " + it.name) }
+                                .onFailure { vm.report("پشتیبان‌گیری ناموفق: ${it.message}", isError = true) }
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("پشتیبان کامل (JSON)") }
                 Spacer(Modifier.height(6.dp))

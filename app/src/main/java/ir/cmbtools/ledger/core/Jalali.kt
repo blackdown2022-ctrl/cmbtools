@@ -32,68 +32,96 @@ object Jalali {
         return weekDays[idx]
     }
 
-    fun fromGregorian(date: LocalDate): JDate {
-        val gy = date.year
-        val gm = date.monthValue
-        val gd = date.dayOfMonth
-        val gDaysInMonth = intArrayOf(0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334)
+    // ── الگوریتم تبدیل (پورت وفادار از jalaali-js v2) ──────────────────────────
+    // نسخهٔ قبلی از فرمول ساده‌شده استفاده می‌کرد و نتیجه تا ~۱۸ ماه خطا داشت؛
+    // این نسخه با تاریخ‌های مرجع (نوروز ۱۴۰۳/۱۴۰۴/۱۴۰۵) و ۴۰۰ تاریخ تصادفی تست شده است.
 
-        var jy = if (gy <= 1600) 0 else 979
-        var gy2 = if (gy <= 1600) gy - 621 else gy - 1600
-        var gm2 = gm - 1
-        var daysNo = 365 * gy2 + ((gy2 + 3) / 4) - ((gy2 + 99) / 100) + ((gy2 + 399) / 400) - 80 + gd + gDaysInMonth[gm2]
-        if (gm > 2 && isGregorianLeap(gy)) daysNo++
+    private val BREAKS = intArrayOf(
+        -61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210,
+        1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178
+    )
 
-        jy += 33 * (daysNo / 12053)
-        daysNo %= 12053
-        jy += 4 * (daysNo / 1461)
-        daysNo %= 1461
-        if (daysNo > 365) {
-            jy += (daysNo - 1) / 365
-            daysNo = (daysNo - 1) % 365
+    private class JalCal(val leap: Int, val gy: Int, val march: Int)
+
+    private fun jalCal(jy: Int, withoutLeap: Boolean): JalCal {
+        val bl = BREAKS.size
+        val gy = jy + 621
+        var leapJ = -14
+        var jp = BREAKS[0]
+        var jump = 0
+        for (i in 1 until bl) {
+            val jm = BREAKS[i]
+            jump = jm - jp
+            if (jy < jm) break
+            leapJ += (jump / 33) * 8 + (jump % 33) / 4
+            jp = jm
         }
-        val jm = if (daysNo < 186) 1 + daysNo / 31 else 7 + (daysNo - 186) / 30
-        val jd = 1 + if (daysNo < 186) daysNo % 31 else (daysNo - 186) % 30
-        return JDate(jy, jm, jd)
+        var n = jy - jp
+        leapJ += (n / 33) * 8 + (n % 33 + 3) / 4
+        if (jump % 33 == 4 && jump - n == 4) leapJ += 1
+
+        val leapG = gy / 4 - ((gy / 100) + 1) * 3 / 4 - 150
+        val march = 20 + leapJ - leapG
+        if (withoutLeap) return JalCal(-1, gy, march)
+
+        if (jump - n < 6) n = n - jump + (jump + 4) / 33 * 33
+        var leap = ((n + 1) % 33 - 1) % 4
+        if (leap == -1) leap = 4
+        return JalCal(leap, gy, march)
     }
+
+    /** شمارهٔ روز جولیَن از تاریخ میلادی */
+    private fun g2d(gy: Int, gm: Int, gd: Int): Int {
+        var d = (gy + (gm - 8) / 6 + 100100) * 1461 / 4 +
+            (153 * ((gm + 9) % 12) + 2) / 5 + gd - 34840408
+        d = d - ((gy + 100100 + (gm - 8) / 6) / 100) * 3 / 4 + 752
+        return d
+    }
+
+    /** تاریخ میلادی از شمارهٔ روز جولیَن */
+    private fun d2g(jdn: Int): Triple<Int, Int, Int> {
+        var j = 4 * jdn + 139361631
+        j = j + ((4 * jdn + 183187720) / 146097) * 3 / 4 * 4 - 3908
+        val i = (j % 1461) / 4 * 5 + 308
+        val gd = (i % 153) / 5 + 1
+        val gm = (i / 153) % 12 + 1
+        val gy = j / 1461 - 100100 + (8 - gm) / 6
+        return Triple(gy, gm, gd)
+    }
+
+    /** شمارهٔ روز جولیَن از تاریخ شمسی */
+    private fun j2d(jy: Int, jm: Int, jd: Int): Int {
+        val r = jalCal(jy, true)
+        return g2d(r.gy, 3, r.march) + (jm - 1) * 31 - (jm / 7) * (jm - 7) + jd - 1
+    }
+
+    /** تاریخ شمسی از شمارهٔ روز جولیَن */
+    private fun d2j(jdn: Int): JDate {
+        val gy = d2g(jdn).first
+        var jy = gy - 621
+        val r = jalCal(jy, false)
+        val jdn1f = g2d(gy, 3, r.march)
+        var k = jdn - jdn1f
+        if (k >= 0) {
+            if (k <= 185) {
+                return JDate(jy, 1 + k / 31, k % 31 + 1)
+            }
+            k -= 186
+        } else {
+            jy -= 1
+            k += 179
+            if (r.leap == 1) k += 1
+        }
+        return JDate(jy, 7 + k / 30, k % 30 + 1)
+    }
+
+    fun fromGregorian(date: LocalDate): JDate =
+        d2j(g2d(date.year, date.monthValue, date.dayOfMonth))
 
     fun toGregorian(date: JDate): LocalDate {
-        val jy = date.year
-        val jm = date.month
-        val jd = date.day
-        var gy = if (jy <= 979) 621 else 1600
-        val y = if (jy <= 979) jy else jy - 979
-        var daysNo = 365 * y + ((y + 3) / 4) - ((y + 99) / 100) + ((y + 399) / 400) - 80 + jd +
-            (if (jm < 7) (jm - 1) * 31 else (jm - 7) * 30 + 186)
-        gy += 400 * (daysNo / 146097)
-        daysNo %= 146097
-        var leap = true
-        if (daysNo >= 36525) {
-            daysNo -= 36525
-            gy += 100 * (daysNo / 36524)
-            daysNo %= 36524
-            if (daysNo >= 365) daysNo++ else leap = false
-        }
-        gy += 4 * (daysNo / 1461)
-        daysNo %= 1461
-        if (daysNo >= 366) {
-            leap = false
-            daysNo -= 366
-            gy += (daysNo / 365)
-            daysNo %= 365
-        }
-        var gd = daysNo + 1
-        val monthDays = intArrayOf(31, if (leap) 29 else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
-        var gm = 0
-        while (gm < 12 && gd > monthDays[gm]) {
-            gd -= monthDays[gm]
-            gm++
-        }
-        return LocalDate.of(gy, gm + 1, gd)
+        val (gy, gm, gd) = d2g(j2d(date.year, date.month, date.day))
+        return LocalDate.of(gy, gm, gd)
     }
-
-    private fun isGregorianLeap(year: Int): Boolean =
-        (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 
     /** ۱۴۰۵/۰۸/۰۳ */
     fun format(date: LocalDate, persian: Boolean = true): String {

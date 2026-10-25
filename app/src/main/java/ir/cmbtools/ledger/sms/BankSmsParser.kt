@@ -132,10 +132,25 @@ object BankSmsParser {
         return if (value < 1_000_000L) Money.tomanToRial(value) else value
     }
 
-    private fun normalize(body: String): String = Money.toLatinDigits(body)
-        .replace('\u200c', ' ')
-        .replace('ي', 'ی')
-        .replace('ك', 'ک')
-        .replace(Regex("\\s+"), " ")
-        .trim()
+    /**
+     * نرمال‌سازی متن پیامک: ارقام لاتین، «ی/ک» فارسی، فاصلهٔ یکسان.
+     * نکته: از Money.toLatinDigits استفاده نمی‌کنیم چون آن تابع فاصله‌ها را حذف می‌کند و
+     * عبارت‌های چندکلمه‌ای مثل «رمز پویا» یا «به حساب شما» دیگر پیدا نمی‌شدند.
+     */
+    private fun normalize(body: String): String {
+        val sb = StringBuilder(body.length)
+        for (ch in body) {
+            sb.append(
+                when {
+                    ch in '۰'..'۹' -> '0' + (ch - '۰')
+                    ch in '٠'..'٩' -> '0' + (ch - '٠')
+                    ch == '\u200c' -> ' '
+                    ch == 'ي' -> 'ی'
+                    ch == 'ك' -> 'ک'
+                    else -> ch
+                }
+            )
+        }
+        return sb.toString().replace(Regex("\\s+"), " ").trim()
+    }
 }

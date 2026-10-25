@@ -25,7 +25,10 @@ class MoneyTest {
     @Test
     fun formats_with_grouping_and_persian_digits() {
         assertEquals("۱۲٬۳۴۵ ریال", Money.format(12345))
-        assertEquals("0 ریال", Money.format(0))
+        assertEquals("۰ ریال", Money.format(0))
+        // خروجی لاتین (برای CSV/Excel) باید کاما و رقم لاتین داشته باشد
+        assertEquals("12,345", Money.format(12345, persian = false, withUnit = false))
+        assertEquals("12345", Money.format(12345, persian = false, withUnit = false).replace(",", ""))
     }
 
     @Test

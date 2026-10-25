@@ -2,7 +2,7 @@ name: Build APK
 
 # ساخت خودکار APK روی سرورهای گیت‌هاب (بدون نیاز به Android Studio روی کامپیوتر شما)
 # اجرا: تب Actions → Build APK → Run workflow
-# خروجی: در پایین همان اجرا، بخش Artifacts → hazine-daftar-apk
+# خروجی: پایین همان اجرا → بخش Artifacts → hazine-daftar-apk
 
 on:
   workflow_dispatch:
@@ -14,11 +14,12 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
 
     steps:
       - name: دریافت کد
@@ -30,8 +31,21 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: نصب Android SDK
-        uses: android-actions/setup-android@v3
+      # روی ماشین‌های گیت‌هاب، Android SDK از قبل نصب است؛ فقط مسیر را ست می‌کنیم
+      # و اگر پلتفرم ۳۴ نبود، نصبش می‌کنیم (بدون اکشن خارجی، چون گاهی خطا می‌دهد).
+      - name: آماده‌سازی Android SDK
+        run: |
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then SDK=/usr/local/lib/android/sdk; fi
+          echo "SDK=$SDK"
+          ls "$SDK" || true
+          echo "sdk.dir=$SDK" > local.properties
+          SDKMGR="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [ -x "$SDKMGR" ] && [ ! -d "$SDK/platforms/android-34" ]; then
+            yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+            yes | "$SDKMGR" "platforms;android-34" "build-tools;34.0.0" || true
+          fi
+          ls "$SDK/platforms" || true
 
       - name: کش Gradle (سرعت بیلدهای بعدی)
         uses: actions/cache@v4
@@ -54,13 +68,14 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: تست‌های واحد
-        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
         continue-on-error: true
 
       - name: ساخت APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
 
       - name: آپلود APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: hazine-daftar-apk
@@ -68,11 +83,28 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: ذخیرهٔ گزارش تست‌ها
+      - name: آپلود گزارش تست‌ها
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-reports
-          path: app/build/reports/tests/**
+          path: |
+            app/build/reports/tests/**
+            test.log
           if-no-files-found: ignore
           retention-days: 14
+
+      # در صورت خطا، متن خطا را در ایشو شمارهٔ ۵ می‌نویسیم تا قابل خواندن باشد
+      # (لاگ خام Actions از این محیط در دسترس نیست و این راه، جایگزین آن است).
+      - name: ثبت خطا برای بررسی
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "### خطای بیلد"
+            echo '```'
+            tail -c 6000 build.log 2>/dev/null || true
+            echo '```'
+          } > error-report.md
+          gh issue comment 5 --body-file error-report.md || true

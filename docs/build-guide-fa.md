@@ -241,6 +241,9 @@ app\release\app-release.apk
 
 اگر Gradle با خطای `Could not resolve…`, `Read timed out`, `Connection reset` متوقف شد:
 
+**راه ۰ (اگر خطای شما دربارهٔ پلاگین `com.android.application` بود):** اول بخش ۱۴ مورد **۳-الف** را ببینید؛
+همان‌جا سه راه دقیق برای این خطا نوشته شده.
+
 **راه ۱ (ساده):** VPN را روی کامپیوتر روشن کنید و Android Studio را ببندید و دوباره باز کنید.
 
 **راه ۲ (اگر VPN روی پورت محلی است، مثلاً v2rayN با پورت 10809):**
@@ -311,6 +314,36 @@ systemProp.https.proxyPort=10809
 ### ۳. `Could not resolve androidx...` / `Read timed out` / `Connection reset`
 - مشکل اینترنت → بخش ۱۱.
 - بعد از تنظیم پروکسی: **File → Invalidate Caches… → Invalidate and Restart** و دوباره Sync.
+
+### ۳-الف. `Plugin [id: 'com.android.application', version: '8.5.2'] was not found in any of the following sources`
+این خطا **یعنی Gradle نتوانسته پلاگین اندروید را از `dl.google.com` دانلود کند**؛ پروژه سالم است.
+
+به ترتیب این‌ها را امتحان کنید:
+
+1. **VPN را روشن کنید** و در Android Studio: **File → Sync Project with Gradle Files** (آیکون 🐘 با فلش).
+   بیشتر مواقع همین کافی است.
+2. **پروکسی در Gradle:** فایل `gradle.properties` را با Notepad باز کنید، چهار خط زیر را از حالت
+   توضیح خارج کنید (`#` ابتدایشان را بردارید) و پورت VPN خود را بگذارید:
+   ```properties
+   systemProp.http.proxyHost=127.0.0.1
+   systemProp.http.proxyPort=10809
+   systemProp.https.proxyHost=127.0.0.1
+   systemProp.https.proxyPort=10809
+   ```
+   سپس Sync. (پورت: v2rayN → 10809، Clash → 7890)
+3. **استفاده از آینه (بدون VPN):** فایل `settings.gradle.kts` را باز کنید. سه خط `maven("https://maven.aliyun.com/...")`
+   را ببرید و **بالای** `google()` بگذارید — هم در `pluginManagement` و هم در `dependencyResolutionManagement`.
+   (در بالای همان فایل، نمونهٔ آماده با توضیح فارسی نوشته شده.)
+4. **پروکسی خود Android Studio:** File → Settings → Appearance & Behavior → System Settings → HTTP Proxy
+   → Manual → `127.0.0.1` و پورت VPN → OK → Sync.
+5. اگر باز هم خطا داد، در ترمینال پایین Android Studio این را اجرا کنید و متن قرمز را بفرستید:
+   ```bash
+   ./gradlew --refresh-dependencies assembleDebug --stacktrace
+   ```
+   (ویندوز: `gradlew.bat --refresh-dependencies assembleDebug --stacktrace`)
+
+> ⚠️ نکتهٔ مهم: اگر فایل ZIP را قبلاً دانلود کرده‌اید (پوشهٔ `cmbtools-main`)، نسخهٔ جدید `main` را
+> دوباره دانلود کنید؛ نسخهٔ قدیمی فایل `gradlew` و چند اصلاح کامپایل را ندارد.
 
 ### ۴. `Gradle sync failed: Unsupported Android Gradle Plugin version`
 - یعنی Android Studio شما قدیمی است. از **Help → Check for Updates** آپدیت کنید

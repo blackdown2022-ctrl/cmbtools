@@ -327,7 +327,12 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
 
             SectionCard(title = "داده‌ها و پشتیبان") {
                 OutlinedButton(
-                    onClick = { ExportManager(context, vm.appContainer()).exportBackup() },
+                    onClick = {
+                        ExportManager(context, vm.appContainer()).exportBackup { r ->
+                            r.onSuccess { vm.report("پشتیبان ساخته شد") }
+                                .onFailure { vm.report("ناموفق: ${it.message}", isError = true) }
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("پشتیبان کامل (JSON)") }
                 Spacer(Modifier.height(8.dp))

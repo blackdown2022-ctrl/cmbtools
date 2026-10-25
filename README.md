@@ -28,6 +28,9 @@
 
 ---
 
+> 🧑‍🎓 **تازه‌کار هستید؟** راهنمای کامل و سادهٔ ساخت اپ در Android Studio (از نصب تا نصب روی گوشی):
+> [`docs/build-guide-fa.md`](docs/build-guide-fa.md)
+
 ## ساخت APK
 
 پیش‌نیاز: Android Studio (Ladybug یا جدیدتر) یا JDK 17 + Android SDK 34.
@@ -48,6 +51,10 @@
 ```bash
 gradle wrapper --gradle-version 8.7
 ```
+
+> پروژه با **Gradle Wrapper** کامل (`gradlew` / `gradlew.bat` / `gradle-wrapper.jar`) همراه است؛
+> نیازی به نصب جداگانهٔ Gradle یا Java نیست. اگر از خط فرمان اجرا می‌کنید، از `gradlew.bat` (ویندوز)
+> یا `./gradlew` (مک/لینوکس) استفاده کنید.
 
 ### نکتهٔ مهم امضا
 

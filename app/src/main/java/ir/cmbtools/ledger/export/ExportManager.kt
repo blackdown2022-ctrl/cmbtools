@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
+import androidx.room.withTransaction
 import ir.cmbtools.ledger.AppContainer
 import ir.cmbtools.ledger.core.InvoiceStatus
 import ir.cmbtools.ledger.core.Jalali
@@ -13,7 +14,10 @@ import ir.cmbtools.ledger.data.BackupPayload
 import ir.cmbtools.ledger.data.Customer
 import ir.cmbtools.ledger.data.CustomerRow
 import ir.cmbtools.ledger.data.Invoice
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -91,7 +95,21 @@ class ExportManager(
         writeAndShare("payments_${stamp()}.csv", (listOf(header) + lines).joinToString("\r\n"))
     }
 
-    suspend fun exportBackup(): File? = withContext(Dispatchers.IO) {
+    /**
+     * پشتیبان کامل. عمداً غیر-suspend است تا از دکمه‌های UI مستقیم صدا زده شود؛
+     * کار در ترد IO انجام و نتیجه در ترد اصلی تحویل داده می‌شود.
+     */
+    fun exportBackup(onResult: (Result<File>) -> Unit = {}) {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            val result = runCatching { buildBackupFile() }
+            withContext(Dispatchers.Main) {
+                result.onSuccess { share(it, "application/json") }
+                onResult(result)
+            }
+        }
+    }
+
+    private suspend fun buildBackupFile(): File {
         val dao = container.backupDao()
         val payload = BackupPayload(
             customers = dao.allCustomers(),
@@ -107,8 +125,7 @@ class ExportManager(
         )
         val file = File(exportsDir(), "backup_${stamp()}.json")
         file.writeText(json.encodeToString(BackupPayload.serializer(), payload))
-        share(file, "application/json")
-        file
+        return file
     }
 
     suspend fun importBackup(uri: Uri): Result<BackupPayload> = withContext(Dispatchers.IO) {
@@ -116,7 +133,9 @@ class ExportManager(
             val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                 ?: error("فایل خوانده نشد")
             val payload = json.decodeFromString(BackupPayload.serializer(), text)
-            container.backupDao().replaceAll(payload)
+            container.db.withTransaction {
+                container.backupDao().replaceAll(payload)
+            }
             payload
         }
     }

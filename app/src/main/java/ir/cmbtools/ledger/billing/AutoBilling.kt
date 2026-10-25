@@ -280,7 +280,7 @@ class AutoBilling(
             }
         }
         // ۲) شمارهٔ داخل یادداشت پنل (سناریوی اصلی: کاربر شماره را در یادداشت می‌نویسد)
-        if (phone.isNotBlank()) customers.byPhone(phone)?.let { return it }
+        if (phone.isNotBlank()) findCustomerByPhone(phone)?.let { return it }
         // ۳) نام دقیق
         customers.byName(cleanName)?.let { return withPhone(it, phone) }
         // ۴) اولین کلمهٔ نام
@@ -302,6 +302,41 @@ class AutoBilling(
     }
 
     /** اگر مشتری شماره نداشت ولی در یادداشت پنل شماره بود، آن را ثبت می‌کند */
+    /**
+     * جست‌وجوی مشتری با شماره، مستقل از قالب ذخیره‌شده.
+     *
+     * چرا لازم است؟ شماره‌ای که کاربر قبلاً دستی ثبت کرده ممکن است «۰۹۱۲…»، «0912 123 4567»
+     * یا «+98912…» باشد و مقایسهٔ متنی ساده آن را پیدا نکند؛ نتیجه‌اش ساخت مشتری تکراری و
+     * تقسیم‌شدن بدهی بین دو پرونده است. اول جست‌وجوی مستقیم (سریع)، بعد مقایسهٔ نرمال‌شده.
+     * جدول مشتری برای استفادهٔ شخصی کوچک است، پس این پیمایش هزینه‌ای ندارد.
+     */
+    suspend fun findCustomerByPhone(rawPhone: String): Customer? {
+        val phone = Phone.normalize(rawPhone)
+        if (phone.isBlank()) return null
+        customers.byPhone(phone)?.let { return it }
+        return customers.all()
+            .asSequence()
+            .filter { !it.archived }
+            .firstOrNull { Phone.normalize(it.phone) == phone }
+    }
+
+    /**
+     * یک‌بار در شروع برنامه: شماره‌های ذخیره‌شده را به قالب یکسان `09xxxxxxxxx` درمی‌آورد.
+     * idempotent است؛ شماره‌های خالی/نامعتبر دست‌نخورده می‌مانند.
+     */
+    suspend fun normalizeStoredPhones(): Int {
+        var changed = 0
+        for (c in customers.all()) {
+            if (c.phone.isBlank()) continue
+            val normalized = Phone.normalize(c.phone)
+            if (normalized.isNotBlank() && normalized != c.phone) {
+                customers.update(c.copy(phone = normalized))
+                changed++
+            }
+        }
+        return changed
+    }
+
     private suspend fun withPhone(customer: Customer, phone: String): Customer {
         if (phone.isBlank() || customer.phone == phone) return customer
         if (customer.phone.isNotBlank()) return customer

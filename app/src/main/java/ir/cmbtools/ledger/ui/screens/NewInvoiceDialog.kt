@@ -58,8 +58,9 @@ fun NewInvoiceDialog(
     var daysText by remember { mutableStateOf(selectedPlan?.days?.toString() ?: "30") }
     var priceRial by remember { mutableStateOf(selectedPlan?.priceRial ?: 0L) }
     var discountRial by remember { mutableStateOf(0L) }
+    // پیش‌فرض از تنظیمات می‌آید: ساخت اکانت + ارسال فوری پیامک فاکتور
     var createAccount by remember { mutableStateOf(true) }
-    var sendSms by remember { mutableStateOf(true) }
+    var sendSms by remember { mutableStateOf(settings.autoSmsOnInvoice) }
     var dueDaysText by remember { mutableStateOf("0") }
     var note by remember { mutableStateOf("") }
     var showPicker by remember { mutableStateOf(false) }

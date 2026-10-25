@@ -38,6 +38,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import ir.cmbtools.ledger.core.AppSettings
+import ir.cmbtools.ledger.core.Jalali
 import ir.cmbtools.ledger.core.Money
 import ir.cmbtools.ledger.core.SmsGatewayProvider
 import ir.cmbtools.ledger.core.SmsMode
@@ -74,6 +76,8 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
     var gatewaySender by remember { mutableStateOf(settings.gatewaySender) }
     var fallbackLink by remember { mutableStateOf(settings.fallbackSubscriptionBase) }
     var autoMatchMax by remember { mutableStateOf(settings.autoMatchMaxRial) }
+    var cardNumber by remember { mutableStateOf(settings.paymentCardNumber) }
+    var pricePerGbText by remember { mutableStateOf(settings.pricePerGbRial.toString()) }
     var pin by remember { mutableStateOf("") }
 
     LaunchedEffect(config) {
@@ -185,6 +189,101 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 )
             }
 
+            SectionCard(title = "همگام‌سازی و فاکتور خودکار") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("همگام‌سازی خودکار با پنل")
+                        Text(
+                            "هر ${Money.toPersian(settings.autoSyncMinutes.toString())} دقیقه، در پس‌زمینه",
+                            color = TextMuted,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                    Switch(
+                        checked = settings.autoSyncEnabled,
+                        onCheckedChange = { vm.setAutoSyncEnabled(it) }
+                    )
+                }
+                if ((config?.lastSyncAt ?: 0L) > 0L) {
+                    Text(
+                        "آخرین همگام‌سازی: " + Jalali.formatDateTime(config?.lastSyncAt ?: 0L),
+                        color = TextMuted,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+                vm.lastSync.collectAsStateWithLifecycle().value?.let { r ->
+                    Text(r.message, color = PrimaryCyan, style = MaterialTheme.typography.labelMedium)
+                }
+
+                Spacer(Modifier.height(10.dp))
+                SwitchLine(
+                    title = "فاکتور خودکار برای کاربر جدید پنل",
+                    hint = "کاربری که مستقیم در پنل ساخته می‌شود",
+                    checked = settings.autoInvoiceOnNewAccount,
+                    onChange = { v -> vm.updateSettings { it.copy(autoInvoiceOnNewAccount = v) } }
+                )
+                SwitchLine(
+                    title = "فاکتور خودکار برای تمدید",
+                    hint = "وقتی تاریخ انقضای اکانت جلو می‌رود",
+                    checked = settings.autoInvoiceOnRenew,
+                    onChange = { v -> vm.updateSettings { it.copy(autoInvoiceOnRenew = v) } }
+                )
+                SwitchLine(
+                    title = "ارسال فوری پیامک فاکتور",
+                    hint = "بلافاصله پس از صدور، به شمارهٔ ثبت‌شدهٔ مشتری",
+                    checked = settings.autoSmsOnInvoice,
+                    onChange = { v -> vm.updateSettings { it.copy(autoSmsOnInvoice = v) } }
+                )
+                SwitchLine(
+                    title = "ساخت خودکار مشتری از نام کاربر پنل",
+                    hint = "اگر مشتری متناظر پیدا نشد",
+                    checked = settings.autoCreateCustomerFromPanel,
+                    onChange = { v -> vm.updateSettings { it.copy(autoCreateCustomerFromPanel = v) } }
+                )
+
+                Spacer(Modifier.height(10.dp))
+                LabeledField(
+                    "شمارهٔ کارت برای درج در فاکتور",
+                    cardNumber,
+                    { cardNumber = it },
+                    placeholder = "6037-9977-1234-5678"
+                )
+                Spacer(Modifier.height(8.dp))
+                LabeledField(
+                    "قیمت هر گیگ (ریال) — برای بسته‌های بدون قیمت",
+                    pricePerGbText,
+                    { pricePerGbText = it.filter { ch -> ch.isDigit() } },
+                    keyboardType = KeyboardType.Number
+                )
+                Text(
+                    "اگر حجم/روز اکانت با هیچ بسته‌ای در صفحهٔ «بسته‌ها» نخواند، فاکتور با این نرخ ساخته می‌شود. صفر = غیرفعال.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            vm.updateSettings {
+                                it.copy(
+                                    paymentCardNumber = cardNumber.trim(),
+                                    pricePerGbRial = pricePerGbText.toLongOrNull() ?: 0L
+                                )
+                            }
+                            vm.report("تنظیمات فاکتور خودکار ذخیره شد")
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("ذخیره") }
+                    OutlinedButton(onClick = { vm.syncPanel() }, modifier = Modifier.weight(1f)) {
+                        Text("همگام‌سازی الان")
+                    }
+                }
+            }
+
             SectionCard(title = "پیامک") {
                 DropdownField(
                     label = "روش ارسال",
@@ -216,10 +315,18 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     maxLines = 10
                 )
                 Text(
-                    "متغیرها: {business} {invoiceNo} {customer} {total} {items} {date} {link} {footer}",
+                    "متغیرها: {business} {customer} {invoiceNo} {datetime} {date} {package} {kind} " +
+                        "{items} {total} {prevBalance} {totalDebt} {debt} {card} {link} {footer}",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )
+                TextButton(
+                    onClick = {
+                        template = AppSettings.DEFAULT_INVOICE_TEMPLATE
+                        vm.updateSettings { it.copy(invoiceTemplate = AppSettings.DEFAULT_INVOICE_TEMPLATE) }
+                        vm.report("قالب پیامک به حالت پیش‌فرض (ساختاریافته) بازگشت")
+                    }
+                ) { Text("بازگردانی قالب پیش‌فرض") }
                 Spacer(Modifier.height(8.dp))
                 LabeledField("امضای پیامک ({footer})", footer, { footer = it })
                 Spacer(Modifier.height(8.dp))
@@ -364,5 +471,28 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
 
             Spacer(Modifier.height(30.dp))
         }
+    }
+}
+
+/** سوییچ با عنوان و توضیح فارسی (در این صفحه چند بار لازم است) */
+@Composable
+private fun SwitchLine(
+    title: String,
+    hint: String? = null,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            if (hint != null) Text(hint, color = TextMuted, style = MaterialTheme.typography.labelMedium)
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }

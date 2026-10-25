@@ -62,6 +62,10 @@ interface PlanDao {
 
     @Query("SELECT COUNT(*) FROM plans")
     suspend fun count(): Int
+
+    /** برای تطبیق قیمت در صدور خودکار فاکتور */
+    @Query("SELECT * FROM plans WHERE active = 1 ORDER BY sortOrder, priceRial")
+    suspend fun activeOnce(): List<Plan>
 }
 
 @Dao
@@ -107,6 +111,14 @@ interface InvoiceDao {
 
     @Query("SELECT * FROM invoices WHERE issuedAtEpochDay BETWEEN :from AND :to AND status != 'VOID'")
     suspend fun between(from: Long, to: Long): List<Invoice>
+
+    /** آیا برای این اکانت پنل قبلاً فاکتور صادر شده است؟ (ضد فاکتور تکراری) */
+    @Query("SELECT COUNT(*) FROM invoices WHERE panelUserUuid = :uuid AND status != 'VOID'")
+    suspend fun countForPanelUser(uuid: String): Int
+
+    /** آخرین فاکتور یک اکانت پنل */
+    @Query("SELECT * FROM invoices WHERE panelUserUuid = :uuid AND status != 'VOID' ORDER BY id DESC LIMIT 1")
+    suspend fun lastForPanelUser(uuid: String): Invoice?
 }
 
 @Dao
@@ -237,6 +249,14 @@ interface PanelDao {
 
     @Query("DELETE FROM panel_accounts WHERE panelId = :panelId")
     suspend fun clearAccounts(panelId: Long)
+
+    /** همهٔ اکانت‌ها به‌صورت لیست (همگام‌سازی خودکار) */
+    @Query("SELECT * FROM panel_accounts")
+    suspend fun allAccounts(): List<PanelAccount>
+
+    /** اتصال اکانت به مشتری بدون دست‌زدن به بقیهٔ فیلدها */
+    @Query("UPDATE panel_accounts SET customerId = :customerId WHERE panelUserUuid = :uuid")
+    suspend fun linkCustomer(uuid: String, customerId: Long)
 }
 
 @Dao

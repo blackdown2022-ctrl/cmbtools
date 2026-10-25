@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import ir.cmbtools.ledger.core.InvoiceKind
 import ir.cmbtools.ledger.core.InvoiceStatus
 import ir.cmbtools.ledger.core.Jalali
 import ir.cmbtools.ledger.core.Money
@@ -85,7 +86,8 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             invoice?.let { inv ->
-                SectionCard {
+                // ── سند فاکتور: نام مشتری، تاریخ و ساعت، شماره، بسته، کارت، بدهی ──
+                SectionCard(title = "مشخصات فاکتور") {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -98,12 +100,40 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
                         StatusPill(InvoiceStatus.label(inv.status), statusColor(inv.status))
                     }
                     Spacer(Modifier.height(10.dp))
-                    InfoRow("تاریخ صدور", Jalali.formatEpochDay(inv.issuedAtEpochDay))
+
+                    InfoRow("مشتری", customer?.name ?: "—")
+                    InfoRow("تاریخ و ساعت", SmsTemplate.formatDateTime(inv))
+                    InfoRow("شمارهٔ فاکتور", Money.toPersian(inv.number))
+                    InfoRow(
+                        "نوع بسته (" + InvoiceKind.label(inv.kind) + ")",
+                        inv.packageName.ifBlank { lines.firstOrNull()?.description ?: "—" }
+                    )
+                    if (inv.cardNumber.isNotBlank()) {
+                        InfoRow("شمارهٔ کارت", Money.toPersian(inv.cardNumber))
+                    }
+
+                    // ماندهٔ قبلی فقط وقتی مشتری از قبل بدهکار بوده نمایش داده می‌شود
+                    if (inv.prevBalanceRial > 0) {
+                        Spacer(Modifier.height(6.dp))
+                        InfoRow("مانده قبلی", Money.format(inv.prevBalanceRial), AccentAmber)
+                        InfoRow(
+                            "جمع کل بدهی",
+                            Money.format(
+                                (if (inv.balanceAfterRial != 0L) inv.balanceAfterRial
+                                else inv.prevBalanceRial + inv.totalRial)
+                            ),
+                            AccentRed
+                        )
+                    } else if (inv.prevBalanceRial < 0) {
+                        InfoRow("اعتبار قبلی", Money.format(-inv.prevBalanceRial), AccentGreen)
+                    }
+
+                    Spacer(Modifier.height(6.dp))
                     if (inv.dueAtEpochDay > 0) InfoRow("سررسید", Jalali.formatEpochDay(inv.dueAtEpochDay))
                     if (inv.discountRial > 0) InfoRow("تخفیف", Money.format(inv.discountRial))
                     InfoRow("پرداخت‌شده", Money.format(inv.paidRial))
                     InfoRow(
-                        "مانده",
+                        "مانده این فاکتور",
                         Money.format(inv.remainingRial),
                         if (inv.remainingRial > 0) AccentAmber else AccentGreen
                     )

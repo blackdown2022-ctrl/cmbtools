@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import ir.cmbtools.ledger.AppContainer
 import ir.cmbtools.ledger.LedgerApp
 import ir.cmbtools.ledger.core.AppSettings
+import ir.cmbtools.ledger.core.InvoiceKind
 import ir.cmbtools.ledger.core.InvoiceStatus
 import ir.cmbtools.ledger.core.Jalali
 import ir.cmbtools.ledger.core.Money
@@ -30,6 +31,8 @@ import ir.cmbtools.ledger.panel.PanelConnection
 import ir.cmbtools.ledger.panel.PanelException
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.sms.SmsTemplate
+import ir.cmbtools.ledger.sync.AutoSyncController
+import ir.cmbtools.ledger.sync.SyncReport
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,6 +75,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _panelStatus = MutableStateFlow("")
     val panelStatus: StateFlow<String> = _panelStatus.asStateFlow()
+
+    private val _lastSync = MutableStateFlow<SyncReport?>(null)
+    val lastSync: StateFlow<SyncReport?> = _lastSync.asStateFlow()
 
     private val _navIntent = MutableStateFlow<String?>(null)
     val navIntent: StateFlow<String?> = _navIntent.asStateFlow()
@@ -255,11 +261,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             if (priceRial < 0) error("مبلغ نامعتبر است")
 
             val planName = plans.value.firstOrNull { it.id == planId }?.name ?: description
+            val packageLabel = description.ifBlank { planName.ifBlank { "سرویس" } }
             val invoiceId = c.invoices.create(
                 customerId = customerId,
                 lines = listOf(
                     NewInvoiceLine(
-                        description = description.ifBlank { planName.ifBlank { "سرویس" } },
+                        description = packageLabel,
                         qty = 1,
                         unitPriceRial = priceRial,
                         planId = planId
@@ -269,7 +276,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 dueAt = if (dueInDays > 0) LocalDate.now().plusDays(dueInDays) else null,
                 note = note,
                 planId = planId,
-                status = InvoiceStatus.ISSUED
+                status = InvoiceStatus.ISSUED,
+                packageName = packageLabel,
+                cardNumber = settings.value.paymentCardNumber,
+                kind = if (createPanelAccount) InvoiceKind.NEW else InvoiceKind.MANUAL
             )
             result = ActionResult(true, "فاکتور صادر شد", invoiceId)
 
@@ -349,18 +359,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _busy.value = true
         var result = ActionResult(false)
         try {
+            val packageLabel = description.ifBlank { "تمدید سرویس" }
             val invoiceId = c.invoices.create(
                 customerId = customerId,
                 lines = listOf(
                     NewInvoiceLine(
-                        description = description.ifBlank { "تمدید سرویس" },
+                        description = packageLabel,
                         unitPriceRial = priceRial,
                         planId = planId
                     )
                 ),
                 planId = planId,
                 note = "تمدید",
-                status = InvoiceStatus.ISSUED
+                status = InvoiceStatus.ISSUED,
+                packageName = packageLabel,
+                cardNumber = settings.value.paymentCardNumber,
+                kind = InvoiceKind.RENEW
             )
             result = ActionResult(true, "فاکتور تمدید صادر شد", invoiceId)
             try {
@@ -451,19 +465,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // ---------------------------------------------------------------- پیامک
 
     private suspend fun sendInvoiceSmsInternal(invoiceId: Long): ActionResult {
-        val invoice = c.invoices.get(invoiceId) ?: return ActionResult(false, "فاکتور پیدا نشد")
-        val customer = c.customers.get(invoice.customerId) ?: return ActionResult(false, "مشتری پیدا نشد")
-        if (customer.phone.isBlank()) return ActionResult(false, "شمارهٔ مشتری ثبت نشده")
-        val lines = c.invoices.lines(invoiceId)
-        val body = SmsTemplate.render(settings.value, invoice, customer, lines, invoice.subscriptionUrl)
-        val result = c.smsSender.send(
-            settings = settings.value,
-            to = customer.phone,
-            body = body,
-            invoiceId = invoiceId,
-            customerId = customer.id
-        )
-        return ActionResult(result.ok, if (result.ok) "پیامک ارسال شد" else "پیامک ارسال نشد: ${result.message}")
+        // یک مسیر واحد برای پیامک: همان چیزی که همگام‌سازی خودکار هم استفاده می‌کند
+        val r = c.billing.sendInvoiceSms(invoiceId)
+        return ActionResult(r.ok, r.message, invoiceId, c.invoices.get(invoiceId)?.subscriptionUrl ?: "")
     }
 
     fun sendInvoiceSms(invoiceId: Long) = viewModelScope.launch {
@@ -506,6 +510,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 c.panelService.saveConfig(host, path, apiKey, https, name.ifBlank { "پنل اصلی" })
             }.onSuccess {
                 success("تنظیمات پنل ذخیره شد")
+                // پنل تازه تنظیم شد → همگام‌سازی خودکار را راه بینداز
+                runCatching { AutoSyncController.start(getApplication<Application>()) }
                 onDone()
             }.onFailure { failure(it.message ?: "خطا") }
         }
@@ -530,13 +536,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun syncPanel() = viewModelScope.launch {
         _busy.value = true
         try {
-            val r = c.panelService.sync()
-            success("${Money.toPersian(r.total.toString())} کاربر همگام شد (${Money.toPersian(r.linked.toString())} متصل به مشتری)")
+            val report = c.syncEngine.sync()
+            _lastSync.value = report
+            success(report.message)
+            if (report.problems.isNotEmpty()) {
+                _events.value = UiEvent(
+                    report.message + "\n" + report.problems.take(3).joinToString("\n"),
+                    report.invoicesIssued == 0 && report.newUsers > 0
+                )
+            }
         } catch (e: Exception) {
             failure(e.message ?: "همگام‌سازی ناموفق")
         } finally {
             _busy.value = false
         }
+    }
+
+    /** روشن/خاموش کردن همگام‌سازی خودکار (سرویس را هم شروع/متوقف می‌کند) */
+    fun setAutoSyncEnabled(enabled: Boolean) {
+        updateSettings { it.copy(autoSyncEnabled = enabled) }
+        runCatching {
+            val app = getApplication<Application>()
+            if (enabled) AutoSyncController.start(app) else AutoSyncController.stop(app)
+        }
+        success(if (enabled) "همگام‌سازی خودکار فعال شد" else "همگام‌سازی خودکار خاموش شد")
     }
 
     fun toggleAccount(account: PanelAccount) = viewModelScope.launch {

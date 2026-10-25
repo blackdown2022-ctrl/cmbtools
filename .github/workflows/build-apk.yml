@@ -121,25 +121,31 @@ jobs:
             if ls app/build/test-results/testDebugUnitTest/*.xml >/dev/null 2>&1; then
               grep -hoE 'tests="[0-9]+" skipped="[0-9]+" failures="[0-9]+" errors="[0-9]+"' \
                 app/build/test-results/testDebugUnitTest/*.xml | head -30
+              total=$(grep -hoE 'tests="[0-9]+"' app/build/test-results/testDebugUnitTest/*.xml \
+                | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
+              echo "مجموع تست‌های اجراشده: $total"
               grep -h -B 2 -A 6 '<failure\|<error' app/build/test-results/testDebugUnitTest/*.xml | head -60 || true
             else
               echo "گزارش تست پیدا نشد"
+              total=0
             fi
             echo '```'
           } > tests.md
           cat tests.md
-          if grep -ql '<failure\|<error' app/build/test-results/testDebugUnitTest/*.xml 2>/dev/null; then
+          # در صورت شکست تست یا نبود هیچ تستی، گزارش در ایشو ۵ ثبت می‌شود
+          if grep -ql '<failure\|<error' app/build/test-results/testDebugUnitTest/*.xml 2>/dev/null \
+             || [ "${total:-0}" -lt 15 ]; then
             gh issue comment 5 --body-file tests.md || true
           fi
 
       - name: انتشار APK در Releases (لینک دانلود ساده)
-        if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+        if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/heads/arena/'))
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "build-${GITHUB_RUN_NUMBER}" \
             app/build/outputs/apk/debug/app-debug.apk \
-            --title "نسخهٔ آمادهٔ نصب (ساخت ${GITHUB_RUN_NUMBER})" \
+            --title "نسخهٔ آمادهٔ نصب (ساخت ${GITHUB_RUN_NUMBER} — ${GITHUB_REF_NAME})" \
             --notes "APK امضاشده با کلید debug. فایل app-debug.apk را روی گوشی نصب کنید." \
             --latest || true
 

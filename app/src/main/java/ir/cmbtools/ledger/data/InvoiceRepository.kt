@@ -1,5 +1,6 @@
 package ir.cmbtools.ledger.data
 
+import ir.cmbtools.ledger.core.InvoiceKind
 import ir.cmbtools.ledger.core.InvoiceStatus
 import ir.cmbtools.ledger.core.Jalali
 import ir.cmbtools.ledger.core.LedgerAccount
@@ -52,7 +53,12 @@ class InvoiceRepository(
         panelUserUuid: String = "",
         panelId: Long = 0,
         subscriptionUrl: String = "",
-        status: String = InvoiceStatus.ISSUED
+        status: String = InvoiceStatus.ISSUED,
+        packageName: String = "",
+        cardNumber: String = "",
+        kind: String = InvoiceKind.MANUAL,
+        autoIssued: Boolean = false,
+        issuedAtMillis: Long = System.currentTimeMillis()
     ): Long = numberMutex.withLock {
         require(customerId > 0) { "مشتری انتخاب نشده است" }
         val cleanLines = lines.filter { it.description.isNotBlank() && it.unitPriceRial > 0 }
@@ -66,6 +72,10 @@ class InvoiceRepository(
         val prefix = "${Jalali.fromGregorian(issuedAt).year}-"
         val seq = invoices.countByPrefix(prefix) + 1
         val number = prefix + seq.toString().padStart(4, '0')
+
+        // ماندهٔ مشتری پیش از این فاکتور. مثبت = بدهکار، منفی = بستانکار (اعتبار).
+        val prevBalance = ledger.balance(customerId)
+        val balanceAfter = prevBalance + total
 
         val invoiceId = invoices.insert(
             Invoice(
@@ -82,7 +92,14 @@ class InvoiceRepository(
                 panelUserUuid = panelUserUuid,
                 panelId = panelId,
                 subscriptionUrl = subscriptionUrl,
-                planId = planId
+                planId = planId,
+                issuedAtMillis = issuedAtMillis,
+                packageName = packageName,
+                cardNumber = cardNumber,
+                prevBalanceRial = prevBalance,
+                balanceAfterRial = balanceAfter,
+                kind = kind,
+                autoIssued = autoIssued
             )
         )
         invoices.insertLines(
@@ -158,6 +175,13 @@ class InvoiceRepository(
 
     suspend fun between(from: LocalDate, to: LocalDate): List<Invoice> =
         invoices.between(from.toEpochDay(), to.toEpochDay())
+
+    /** آیا برای این اکانت پنل فاکتوری صادر شده است؟ (ضد تکرار) */
+    suspend fun hasInvoicesForPanelUser(uuid: String): Boolean =
+        uuid.isNotBlank() && invoices.countForPanelUser(uuid) > 0
+
+    suspend fun lastForPanelUser(uuid: String): Invoice? =
+        if (uuid.isBlank()) null else invoices.lastForPanelUser(uuid)
 
     companion object {
         fun statusFor(invoice: Invoice, paidRial: Long): String = when {

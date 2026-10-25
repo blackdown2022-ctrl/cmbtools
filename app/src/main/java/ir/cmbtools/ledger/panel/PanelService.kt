@@ -82,7 +82,9 @@ class PanelService(
                 usageGb = user.currentUsageGb,
                 enabled = user.enable,
                 status = user.status,
-                subscriptionUrl = url
+                subscriptionUrl = url,
+                // فاکتور این اکانت پیش از ساخت آن در پنل صادر شده است
+                lastInvoicedExpireEpochDay = PanelClient.parseEpochDay(user.expireDate)
             )
         )
         return AccountProvisionResult(
@@ -112,7 +114,10 @@ class PanelService(
                 usageGb = user.currentUsageGb,
                 enabled = user.enable,
                 status = user.status,
-                subscriptionUrl = url
+                subscriptionUrl = url,
+                prevExpireEpochDay = existing?.expireEpochDay ?: 0,
+                // فاکتور تمدید پیش از فراخوانی این متد صادر شده است
+                lastInvoicedExpireEpochDay = PanelClient.parseEpochDay(user.expireDate)
             )
         )
         return AccountProvisionResult(
@@ -131,64 +136,6 @@ class PanelService(
         client.setEnabled(uuid, enabled)
         panelDao.byPanelUuid(uuid)?.let { panelDao.upsertAccount(it.copy(enabled = enabled)) }
     }
-
-    /** همگام‌سازی کاربران پنل → اکانت‌های محلی (اتصال به مشتری از روی کامنت یا نام) */
-    suspend fun sync(): SyncResult {
-        val (users, meta) = client.fetchUsers()
-        val linkBase = meta.linkDomains.firstOrNull()?.base ?: prefs.current.fallbackSubscriptionBase
-        var linked = 0
-        var unlinked = 0
-        for (u in users) {
-            val customerId = resolveCustomerId(u.comment, u.name)
-            if (customerId > 0) linked++ else unlinked++
-            panelDao.upsertAccount(
-                PanelAccount(
-                    id = panelDao.byPanelUuid(u.uuid)?.id ?: 0,
-                    customerId = customerId,
-                    panelUserUuid = u.uuid,
-                    name = u.name,
-                    gb = u.usageLimitGb,
-                    days = u.packageDays,
-                    startEpochDay = PanelClient.parseEpochDay(u.startDate),
-                    expireEpochDay = PanelClient.parseEpochDay(u.expireDate),
-                    usageGb = u.currentUsageGb,
-                    enabled = u.enable,
-                    status = u.status,
-                    subscriptionUrl = client.subscriptionUrl(u.uuid, linkBase)
-                )
-            )
-        }
-        return SyncResult(
-            total = users.size,
-            linked = linked,
-            unlinked = unlinked,
-            panelVersion = (panelDao.config() ?: PanelConfig()).panelVersion
-        )
-    }
-
-    /**
-     * اتصال کاربر پنل به مشتری محلی، به ترتیب:
-     * ۱) کامنتی که خود این اپ نوشته: cmbtools:<customerId>:<name>
-     * ۲) نام دقیق مشتری
-     * ۳) نام مشتری داخل نام کاربر پنل (prefix)
-     */
-    private suspend fun resolveCustomerId(comment: String?, name: String): Long {
-        if (comment != null && comment.startsWith("cmbtools:")) {
-            val id = comment.removePrefix("cmbtools:").substringBefore(":").toLongOrNull()
-            if (id != null && id > 0 && customerDao.byId(id) != null) return id
-        }
-        customerDao.byName(name.trim())?.let { return it.id }
-        val firstToken = name.trim().substringBefore(" ").trim()
-        if (firstToken.length >= 3) customerDao.byName(firstToken)?.let { return it.id }
-        return 0
-    }
-
-    data class SyncResult(
-        val total: Int,
-        val linked: Int,
-        val unlinked: Int,
-        val panelVersion: String
-    )
 
     companion object {
         fun suggestedExpire(days: Int): Long = LocalDate.now().plusDays(days.toLong()).toEpochDay()

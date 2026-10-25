@@ -23,16 +23,54 @@ data class AppSettings(
     val fallbackSubscriptionBase: String = "",
     val autoMatchBankSms: Boolean = true,
     /** مبالغ بالاتر از این مقدار بدون تأیید دستی خودکار تطبیق نشوند (ریال) */
-    val autoMatchMaxRial: Long = 20_000_000
+    val autoMatchMaxRial: Long = 20_000_000,
+
+    // ── همگام‌سازی و صدور خودکار فاکتور ──────────────────────────────────────
+    /** هر چند دقیقه با پنل همگام‌سازی شود (سرویس پس‌زمینه) */
+    val autoSyncEnabled: Boolean = true,
+    val autoSyncMinutes: Int = 5,
+    /** برای اکانت تازه‌ای که در پنل ساخته می‌شود فاکتور خودکار صادر شود */
+    val autoInvoiceOnNewAccount: Boolean = true,
+    /** برای اکانتی که تمدید می‌شود فاکتور خودکار صادر شود */
+    val autoInvoiceOnRenew: Boolean = true,
+    /** فاکتور بلافاصله با پیامک برای مشتری ارسال شود */
+    val autoSmsOnInvoice: Boolean = true,
+    /** اگر کاربر پنل مشتری محلی نداشت، مشتری خودکار ساخته شود */
+    val autoCreateCustomerFromPanel: Boolean = true,
+    /** شمارهٔ کارت فروشگاه که در فاکتور درج می‌شود */
+    val paymentCardNumber: String = "",
+    /** قیمت هر گیگ برای بسته‌های بدون «بستهٔ قیمت‌دار» (ریال) — صفر = غیرفعال */
+    val pricePerGbRial: Long = 0
 ) {
     companion object {
-        const val DEFAULT_INVOICE_TEMPLATE =
+        /**
+         * ساختار فاکتور خواسته‌شده: نام مشتری، تاریخ و ساعت، شمارهٔ فاکتور،
+         * نوع بسته، شمارهٔ کارت و (در صورت بدهی قبلی) مانده قبلی + جمع کل بدهی.
+         *
+         * متغیرها:
+         *  {business} {customer} {invoiceNo} {datetime} {date} {package} {items}
+         *  {total} {prevBalance} {totalDebt} {debt} {card} {kind} {link} {footer}
+         */
+        /** قالب نسخهٔ قبل — برای مهاجرت خودکار به قالب ساختاریافته */
+        const val LEGACY_INVOICE_TEMPLATE =
             "{business}\n" +
                 "فاکتور {invoiceNo}\n" +
                 "{customer} عزیز\n" +
                 "مبلغ: {total} ریال\n" +
                 "بابت: {items}\n" +
                 "تاریخ: {date}\n" +
+                "{link}\n" +
+                "{footer}"
+
+        const val DEFAULT_INVOICE_TEMPLATE =
+            "{business}\n" +
+                "فاکتور {invoiceNo}\n" +
+                "مشتری: {customer}\n" +
+                "تاریخ: {datetime}\n" +
+                "بسته: {package}\n" +
+                "مبلغ: {total}\n" +
+                "{debt}" +
+                "کارت: {card}\n" +
                 "{link}\n" +
                 "{footer}"
     }
@@ -88,10 +126,21 @@ class Prefs(context: Context) {
             gatewayPattern = sp.getString("gatewayPattern", "") ?: "",
             businessName = sp.getString("businessName", defaults.businessName) ?: defaults.businessName,
             invoiceFooter = sp.getString("invoiceFooter", "") ?: "",
-            invoiceTemplate = sp.getString("invoiceTemplate", defaults.invoiceTemplate) ?: defaults.invoiceTemplate,
+            // اگر کاربر قالب پیش‌فرض قدیمی را (بدون تاریخ‌وساعت/بسته/کارت/بدهی) داشت،
+            // خودکار به قالب ساختاریافتهٔ جدید ارتقا می‌یابد. قالب‌های دستی دست‌نخورده می‌مانند.
+            invoiceTemplate = (sp.getString("invoiceTemplate", defaults.invoiceTemplate) ?: defaults.invoiceTemplate)
+                .let { if (it.trim() == AppSettings.LEGACY_INVOICE_TEMPLATE.trim()) defaults.invoiceTemplate else it },
             fallbackSubscriptionBase = sp.getString("fallbackSubscriptionBase", "") ?: "",
             autoMatchBankSms = sp.getBoolean("autoMatchBankSms", true),
-            autoMatchMaxRial = sp.getLong("autoMatchMaxRial", defaults.autoMatchMaxRial)
+            autoMatchMaxRial = sp.getLong("autoMatchMaxRial", defaults.autoMatchMaxRial),
+            autoSyncEnabled = sp.getBoolean("autoSyncEnabled", true),
+            autoSyncMinutes = sp.getInt("autoSyncMinutes", 5),
+            autoInvoiceOnNewAccount = sp.getBoolean("autoInvoiceOnNewAccount", true),
+            autoInvoiceOnRenew = sp.getBoolean("autoInvoiceOnRenew", true),
+            autoSmsOnInvoice = sp.getBoolean("autoSmsOnInvoice", true),
+            autoCreateCustomerFromPanel = sp.getBoolean("autoCreateCustomerFromPanel", true),
+            paymentCardNumber = sp.getString("paymentCardNumber", "") ?: "",
+            pricePerGbRial = sp.getLong("pricePerGbRial", 0)
         )
     }
 
@@ -113,6 +162,14 @@ class Prefs(context: Context) {
             .putString("fallbackSubscriptionBase", next.fallbackSubscriptionBase)
             .putBoolean("autoMatchBankSms", next.autoMatchBankSms)
             .putLong("autoMatchMaxRial", next.autoMatchMaxRial)
+            .putBoolean("autoSyncEnabled", next.autoSyncEnabled)
+            .putInt("autoSyncMinutes", next.autoSyncMinutes)
+            .putBoolean("autoInvoiceOnNewAccount", next.autoInvoiceOnNewAccount)
+            .putBoolean("autoInvoiceOnRenew", next.autoInvoiceOnRenew)
+            .putBoolean("autoSmsOnInvoice", next.autoSmsOnInvoice)
+            .putBoolean("autoCreateCustomerFromPanel", next.autoCreateCustomerFromPanel)
+            .putString("paymentCardNumber", next.paymentCardNumber)
+            .putLong("pricePerGbRial", next.pricePerGbRial)
             .apply()
         _settings.value = next
     }

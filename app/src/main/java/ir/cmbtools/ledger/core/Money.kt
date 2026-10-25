@@ -19,7 +19,8 @@ object Money {
     fun format(rial: Long, persian: Boolean = true, withUnit: Boolean = true): String {
         val sign = if (rial < 0) "-" else ""
         val body = grouping.format(kotlin.math.abs(rial))
-        val text = (if (persian) toPersian(sign + body) else sign + body)
+        // جداکنندهٔ هزارگان در نمایش فارسی «٬» است؛ در خروجی لاتین (CSV) کاما می‌ماند.
+        val text = if (persian) toPersian(sign + body).replace(',', '٬') else sign + body
         return if (withUnit) "$text ریال" else text
     }
 

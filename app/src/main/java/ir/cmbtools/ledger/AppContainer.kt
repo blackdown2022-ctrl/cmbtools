@@ -1,6 +1,7 @@
 package ir.cmbtools.ledger
 
 import android.content.Context
+import ir.cmbtools.ledger.billing.AutoBilling
 import ir.cmbtools.ledger.core.Prefs
 import ir.cmbtools.ledger.data.AppDatabase
 import ir.cmbtools.ledger.data.CustomerRepository
@@ -11,6 +12,7 @@ import ir.cmbtools.ledger.panel.PanelClient
 import ir.cmbtools.ledger.panel.PanelService
 import ir.cmbtools.ledger.sms.PaymentMatcher
 import ir.cmbtools.ledger.sms.SmsSender
+import ir.cmbtools.ledger.sync.SyncEngine
 
 /**
  * وابستگی‌ها به‌صورت دستی ساخته می‌شوند (بدون Hilt) تا پروژه سبک و قابل فهم بماند.
@@ -42,6 +44,12 @@ class AppContainer(context: Context) {
     val matcher = PaymentMatcher(bankSmsDao, customersDao, invoicesDao, payments, prefs)
     val smsSender = SmsSender(appContext, outboxDao)
     val seed = SeedData(customersDao, plansDao, panelDao)
+
+    /** موتور صورت‌حساب خودکار (فاکتور + پیامک) — مشترک بین UI و همگام‌سازی پس‌زمینه */
+    val billing = AutoBilling(invoices, customersDao, plansDao, smsSender, prefs)
+
+    /** همگام‌سازی هوشمند پنل: کاربر جدید/تمدید → فاکتور خودکار */
+    val syncEngine = SyncEngine(panelClient, panelDao, customersDao, billing, prefs)
 
     fun plans() = plansDao
     fun expensesDao() = expensesDao

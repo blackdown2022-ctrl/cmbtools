@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -20,7 +22,7 @@ import androidx.room.RoomDatabase
         BankSms::class,
         SmsOutbox::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -36,8 +38,37 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun backup(): BackupDao
 
     companion object {
+
+        /**
+         * ۱ → ۲ : فیلدهای «سند فاکتور» (تاریخ و ساعت، بسته، کارت، مانده قبلی و جمع بدهی)
+         * و نشانگرهای تشخیص تمدید در اکانت‌های پنل.
+         * همه ستون‌ها مقدار پیش‌فرض دارند، پس دادهٔ قبلی حفظ می‌شود.
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE invoices ADD COLUMN issuedAtMillis INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE invoices ADD COLUMN packageName TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE invoices ADD COLUMN cardNumber TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE invoices ADD COLUMN prevBalanceRial INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE invoices ADD COLUMN balanceAfterRial INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE invoices ADD COLUMN kind TEXT NOT NULL DEFAULT 'MANUAL'")
+                db.execSQL("ALTER TABLE invoices ADD COLUMN autoIssued INTEGER NOT NULL DEFAULT 0")
+
+                db.execSQL("ALTER TABLE panel_accounts ADD COLUMN prevExpireEpochDay INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE panel_accounts ADD COLUMN lastInvoicedExpireEpochDay INTEGER NOT NULL DEFAULT 0")
+
+                db.execSQL("ALTER TABLE panel_configs ADD COLUMN baselineAtMillis INTEGER NOT NULL DEFAULT 0")
+
+                // فاکتورهای قدیمی زمان دقیق ندارند؛ از روز صدور بازسازی می‌شود (ظهر همان روز).
+                db.execSQL("UPDATE invoices SET issuedAtMillis = issuedAtEpochDay * 86400000 + 43200000 WHERE issuedAtMillis = 0")
+                // جمع بدهی فاکتورهای قدیمی از مبلغ خود فاکتور پر می‌شود.
+                db.execSQL("UPDATE invoices SET balanceAfterRial = totalRial - paidRial WHERE balanceAfterRial = 0")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "cmb-ledger.db")
+                .addMigrations(MIGRATION_1_2)
                 .fallbackToDestructiveMigration()
                 .build()
     }

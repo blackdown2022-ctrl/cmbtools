@@ -58,9 +58,39 @@ data class Invoice(
     /** لینک اشتراک که در پیامک ارسال شد */
     val subscriptionUrl: String = "",
     val planId: Long = 0,
+    // ── عکس فوری سند فاکتور (تا بعداً با تغییر تنظیمات/قیمت‌ها عوض نشود) ──
+    /** زمان دقیق صدور برای نمایش «تاریخ و ساعت» در فاکتور */
+    val issuedAtMillis: Long = System.currentTimeMillis(),
+    /** نوع بستهٔ ساخته یا تمدید شده در لحظهٔ صدور (مثلاً «یک‌ماهه ۳۰ گیگ») */
+    val packageName: String = "",
+    /** شمارهٔ کارتی که هنگام صدور در فاکتور درج شد (کارت فروشگاه) */
+    val cardNumber: String = "",
+    /** ماندهٔ مشتری «قبل از» این فاکتور (مثبت = بدهکار، منفی = بستانکار) */
+    val prevBalanceRial: Long = 0,
+    /** جمع کل بدهی مشتری «بعد از» این فاکتور */
+    val balanceAfterRial: Long = 0,
+    /** NEW = اکانت جدید، RENEW = تمدید، MANUAL = فاکتور دستی */
+    val kind: String = InvoiceKind.MANUAL,
+    /** آیا اپ خودکار صادر کرده است؟ */
+    val autoIssued: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
 ) {
     val remainingRial: Long get() = (totalRial - paidRial).coerceAtLeast(0)
+
+    /** مبلغی که از قبل بدهکار بوده و در این فاکتور هم آمده است */
+    val carriedDebtRial: Long get() = prevBalanceRial.coerceAtLeast(0)
+}
+
+object InvoiceKind {
+    const val NEW = "NEW"
+    const val RENEW = "RENEW"
+    const val MANUAL = "MANUAL"
+
+    fun label(v: String): String = when (v) {
+        NEW -> "اکانت جدید"
+        RENEW -> "تمدید"
+        else -> "فاکتور"
+    }
 }
 
 @Entity(
@@ -163,7 +193,12 @@ data class PanelConfig(
     val useHttps: Boolean = true,
     /** آخرین نسخهٔ خوانده‌شده از پنل */
     val panelVersion: String = "",
-    val lastSyncAt: Long = 0
+    val lastSyncAt: Long = 0,
+    /**
+     * زمان نخستین همگام‌سازی موفق. تا وقتی صفر است، اپ فقط «وضعیت موجود» را ثبت می‌کند
+     * و برای کاربران قدیمی پنل فاکتور نمی‌سازد (جلوگیری از سیل فاکتور در اولین اجرا).
+     */
+    val baselineAtMillis: Long = 0
 ) {
     val isConfigured: Boolean get() = host.isNotBlank() && adminProxyPath.isNotBlank() && apiKey.isNotBlank()
 }
@@ -184,6 +219,10 @@ data class PanelAccount(
     val enabled: Boolean = true,
     val status: String = "",
     val subscriptionUrl: String = "",
+    /** مقدار تاریخ انقضا در همگام‌سازی قبلی — پایهٔ تشخیص «تمدید شده» */
+    val prevExpireEpochDay: Long = 0,
+    /** آخرین انقضایی که برایش فاکتور صادر شد (ضد فاکتور تکراری) */
+    val lastInvoicedExpireEpochDay: Long = 0,
     val syncedAt: Long = System.currentTimeMillis()
 )
 

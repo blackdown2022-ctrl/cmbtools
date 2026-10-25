@@ -12,11 +12,25 @@ object PanelSyncRules {
 
     /**
      * آیا این تغییرات «تمدید» است؟
-     * تمدید = تاریخ انقضا جلو رفته باشد. اختلاف کمتر از ۱ روز نادیده گرفته می‌شود
-     * تا تغییر ساعت/منطقه‌زمانی باعث فاکتور الکی نشود.
+     *
+     * حالت ۱ (رایج): تاریخ انقضا جلو رفته. اختلاف کمتر از ۱ روز نادیده گرفته می‌شود
+     *   تا تغییر ساعت/منطقه‌زمانی باعث فاکتور الکی نشود.
+     * حالت ۲: تمدید از داخل خود پنل با `start_date = null` انجام شده؛ در این حالت
+     *   تاریخ انقضا موقتاً خالی/کمتر می‌شود و روزها از «اولین اتصال بعدی» شمرده می‌شوند.
+     *   این را با «صفر شدن مصرف» تشخیص می‌دهیم (کاربر قبلاً مصرف داشته و اکنون ندارد).
      */
-    fun isRenewal(oldExpireEpochDay: Long, newExpireEpochDay: Long): Boolean =
-        oldExpireEpochDay > 0 && newExpireEpochDay > oldExpireEpochDay + 1
+    fun isRenewal(
+        oldExpireEpochDay: Long,
+        newExpireEpochDay: Long,
+        oldUsageGb: Double = 0.0,
+        newUsageGb: Double = 0.0
+    ): Boolean {
+        if (oldExpireEpochDay <= 0) return false
+        if (newExpireEpochDay > oldExpireEpochDay + 1) return true
+        // تمدید با ریست دوره در پنل: انقضا عقب/خالی شده و مصرف تقریباً صفر شده است
+        val usageReset = oldUsageGb > 0.3 && newUsageGb + 0.3 < oldUsageGb
+        return newExpireEpochDay < oldExpireEpochDay && usageReset
+    }
 
     /**
      * ایندکس بستهٔ متناسب با حجم/روز. اول تطبیق دقیق، بعد نزدیک‌ترین حجم با همان تعداد روز.

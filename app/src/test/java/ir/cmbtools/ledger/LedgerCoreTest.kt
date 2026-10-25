@@ -148,7 +148,17 @@ class PanelSyncRulesTest {
         assertFalse(PanelSyncRules.isRenewal(19000, 19000))       // بی‌تغییر
         assertFalse(PanelSyncRules.isRenewal(19000, 19000 + 1))   // تغییر ناچیز (ساعت/منطقه)
         assertTrue(PanelSyncRules.isRenewal(19000, 19031))        // ۳۰ روز جلو
-        assertFalse(PanelSyncRules.isRenewal(19031, 19000))       // عقب رفتن = تمدید نیست
+        assertFalse(PanelSyncRules.isRenewal(19031, 19000))       // عقب رفتن بدون ریست مصرف = تمدید نیست
+    }
+
+    @Test
+    fun detects_renewal_when_panel_clears_expiry_and_usage() {
+        // تمدید از داخل پنل با start_date = null: انقضا صفر و مصرف صفر می‌شود
+        assertTrue(PanelSyncRules.isRenewal(19000, 0, oldUsageGb = 12.5, newUsageGb = 0.0))
+        // اگر مصرف صفر نشده بود، تمدید نیست
+        assertFalse(PanelSyncRules.isRenewal(19000, 0, oldUsageGb = 12.5, newUsageGb = 12.4))
+        // کاربر تازه (انقضای قبلی صفر) هرگز «تمدید» حساب نمی‌شود
+        assertFalse(PanelSyncRules.isRenewal(0, 19030, oldUsageGb = 5.0, newUsageGb = 0.0))
     }
 
     @Test

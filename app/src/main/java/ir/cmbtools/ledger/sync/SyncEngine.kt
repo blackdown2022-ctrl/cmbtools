@@ -96,7 +96,12 @@ class SyncEngine(
             var lastInvoicedExpire = old?.lastInvoicedExpireEpochDay ?: 0L
 
             val isNewUser = old == null
-            val renewed = !isNewUser && PanelSyncRules.isRenewal(oldExpire, newExpire)
+            val renewed = !isNewUser && PanelSyncRules.isRenewal(
+                oldExpireEpochDay = oldExpire,
+                newExpireEpochDay = newExpire,
+                oldUsageGb = old?.usageGb ?: 0.0,
+                newUsageGb = u.currentUsageGb
+            )
 
             if (firstRun) {
                 // خط پایه: فقط ثبت وضعیت، بدون فاکتور

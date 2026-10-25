@@ -1,41 +1,38 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  تنظیم مخازن (Repositories)
 //
-//  ترتیب فعلی برای اینترنت آزاد بهینه است: google() → mavenCentral().
-//  اگر اینترنت شما به dl.google.com / repo.maven.apache.org دسترسی ندارد
-//  (مثلاً بدون VPN در ایران)، سه خط «آینه» را به بالای google() منتقل کنید:
+//  ترتیب پیش‌فرض: آینه‌ها (Aliyun/Huawei) اول، سپس google() و mavenCentral().
+//  دلیل: در ایران دسترسی به dl.google.com معمولاً بسته است و اگر google() اول
+//  باشد، Gradle با خطای «Plugin ... was not found» یا timeout متوقف می‌شود.
 //
-//      maven("https://maven.aliyun.com/repository/google")
-//      maven("https://maven.aliyun.com/repository/public")
-//      maven("https://maven.aliyun.com/repository/gradle-plugin")
-//
-//  در هر دو بلوک (pluginManagement و dependencyResolutionManagement) همین کار را کنید.
+//  اگر اینترنت آزاد/VPN دارید و Sync کند است، دو بلوک زیر را جابه‌جا کنید:
+//  google() و mavenCentral() را بالای آینه‌ها ببرید.
 // ─────────────────────────────────────────────────────────────────────────────
 
 pluginManagement {
     repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-
-        // آینه‌های جایگزین (پشتیبان). اگر دسترسی به گوگل ندارید، این‌ها را بالا ببرید.
+        // ① آینه‌ها (بدون نیاز به VPN)
         maven("https://maven.aliyun.com/repository/google")
         maven("https://maven.aliyun.com/repository/public")
         maven("https://maven.aliyun.com/repository/gradle-plugin")
         maven("https://repo.huaweicloud.com/repository/maven/")
+
+        // ② مخازن رسمی (پشتیبان)
+        google()
+        mavenCentral()
+        gradlePluginPortal()
     }
 }
 
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        google()
-        mavenCentral()
-
-        // همان آینه‌ها برای کتابخانه‌ها (Compose / Room / Retrofit …)
         maven("https://maven.aliyun.com/repository/google")
         maven("https://maven.aliyun.com/repository/public")
         maven("https://repo.huaweicloud.com/repository/maven/")
+
+        google()
+        mavenCentral()
     }
 }
 

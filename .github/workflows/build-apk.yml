@@ -59,8 +59,8 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts') }}
-          restore-keys: gradle-${{ runner.os }}-
+          key: gradle-v2-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts') }}
+          restore-keys: gradle-v2-${{ runner.os }}-
 
       # کلید امضای debug را بین اجراها نگه می‌داریم تا نسخهٔ جدید روی نسخهٔ قبلی
       # نصب شود (وگرنه امضا هر بار عوض می‌شود و باید اپ حذف شود = پاک شدن داده).
@@ -73,6 +73,21 @@ jobs:
       - name: اجرایی کردن gradlew
         run: chmod +x ./gradlew
 
+      - name: بررسی دسترسی مخازن
+        run: |
+          check() {
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 25 "$1" 2>/dev/null || echo ERR)
+            echo "- $code  $1"
+          }
+          {
+            echo "### دسترسی مخازن از رانر"
+            check "https://maven.aliyun.com/repository/google/com/android/application/com.android.application.gradle.plugin/8.5.2/com.android.application.gradle.plugin-8.5.2.pom"
+            check "https://maven.aliyun.com/repository/gradle-plugin/com/google/devtools/ksp/com.google.devtools.ksp.gradle.plugin/2.0.20-1.0.25/com.google.devtools.ksp.gradle.plugin-2.0.20-1.0.25.pom"
+            check "https://repo.huaweicloud.com/repository/maven/com/google/devtools/ksp/com.google.devtools.ksp.gradle.plugin/2.0.20-1.0.25/com.google.devtools.ksp.gradle.plugin-2.0.20-1.0.25.pom"
+            check "https://repo1.maven.org/maven2/com/google/devtools/ksp/com.google.devtools.ksp.gradle.plugin/2.0.20-1.0.25/com.google.devtools.ksp.gradle.plugin-2.0.20-1.0.25.pom"
+            check "https://plugins.gradle.org/m2/com/google/devtools/ksp/com.google.devtools.ksp.gradle.plugin/2.0.20-1.0.25/com.google.devtools.ksp.gradle.plugin-2.0.20-1.0.25.pom"
+          } | tee net.txt
+
       - name: تست‌های واحد
         id: tests
         continue-on-error: true
@@ -84,7 +99,7 @@ jobs:
         id: apk
         run: |
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+          ./gradlew assembleDebug --no-daemon --stacktrace --refresh-dependencies 2>&1 | tee build.log
 
       - name: آپلود APK
         if: steps.apk.outcome == 'success'
@@ -129,6 +144,11 @@ jobs:
             echo "#### بخش «What went wrong»"
             echo '```'
             grep -A 25 -E 'What went wrong|FAILURE: Build failed' build.log 2>/dev/null | head -70 || echo "(هیچ)"
+            echo '```'
+            echo ""
+            echo "#### دسترسی مخازن"
+            echo '```'
+            cat net.txt 2>/dev/null || echo "(هیچ)"
             echo '```'
             echo ""
             echo "#### نتیجهٔ تست‌ها"

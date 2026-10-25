@@ -1,5 +1,6 @@
 package ir.cmbtools.ledger.data
 
+import ir.cmbtools.ledger.core.InvoiceKind
 import ir.cmbtools.ledger.core.InvoiceStatus
 import ir.cmbtools.ledger.core.Jalali
 import ir.cmbtools.ledger.core.LedgerAccount

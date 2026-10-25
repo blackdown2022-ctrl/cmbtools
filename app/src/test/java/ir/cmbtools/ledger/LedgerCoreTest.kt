@@ -144,7 +144,6 @@ class PanelSyncRulesTest {
 
     @Test
     fun detects_renewal_only_when_expiry_moves_forward() {
-        closeTo(1L, 0L)
         assertFalse(PanelSyncRules.isRenewal(0, 19000))          // نخستین بار
         assertFalse(PanelSyncRules.isRenewal(19000, 19000))       // بی‌تغییر
         assertFalse(PanelSyncRules.isRenewal(19000, 19000 + 1))   // تغییر ناچیز (ساعت/منطقه)
@@ -180,8 +179,6 @@ class PanelSyncRulesTest {
         assertEquals("30 گیگ", PanelSyncRules.packageLabel("", 30.0, 0))
         assertEquals("سرویس اینترنت", PanelSyncRules.packageLabel("", 0.0, 0))
     }
-
-    private fun closeTo(expected: Long, actual: Long) = assertEquals(expected, actual)
 }
 
 class InvoiceTemplateTest {

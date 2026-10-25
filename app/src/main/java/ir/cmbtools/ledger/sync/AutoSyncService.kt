@@ -65,7 +65,10 @@ class AutoSyncService : Service() {
                     "${e.message ?: "خطای همگام‌سازی"} • ${Jalali.formatDateTime(System.currentTimeMillis())}"
                 }
             } else {
-                lastMessage = "پنل تنظیم نشده است"
+                // پنل تنظیم نشده: سرویس را نگه نمی‌داریم تا اعلان دائمی بی‌مورد نماند.
+                // به‌محض ذخیرهٔ تنظیمات پنل، دوباره از AppViewModel شروع می‌شود.
+                stopSelf()
+                return
             }
 
             runCatching {

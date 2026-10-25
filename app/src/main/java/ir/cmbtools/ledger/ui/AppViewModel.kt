@@ -510,6 +510,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 c.panelService.saveConfig(host, path, apiKey, https, name.ifBlank { "پنل اصلی" })
             }.onSuccess {
                 success("تنظیمات پنل ذخیره شد")
+                // پنل تازه تنظیم شد → همگام‌سازی خودکار را راه بینداز
+                runCatching { AutoSyncController.start(getApplication<Application>()) }
                 onDone()
             }.onFailure { failure(it.message ?: "خطا") }
         }

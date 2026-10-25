@@ -20,6 +20,9 @@ class LedgerApp : Application() {
         notifications = Notifications(this)
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             container.seed.ifEmpty()
+            // شماره‌های قدیمی (فارسی/با فاصله/+98) یک‌بار به قالب 09xxxxxxxxx تبدیل می‌شوند
+            // تا تطبیق با «یادداشت» کاربران پنل و پیامک بانکی دقیق باشد.
+            runCatching { container.billing.normalizeStoredPhones() }
         }
     }
 }

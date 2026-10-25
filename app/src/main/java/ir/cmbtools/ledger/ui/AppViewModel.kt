@@ -11,6 +11,7 @@ import ir.cmbtools.ledger.core.InvoiceStatus
 import ir.cmbtools.ledger.core.Jalali
 import ir.cmbtools.ledger.core.Money
 import ir.cmbtools.ledger.core.PaymentMethod
+import ir.cmbtools.ledger.core.Phone
 import ir.cmbtools.ledger.core.SmsMode
 import ir.cmbtools.ledger.data.BankSms
 import ir.cmbtools.ledger.data.Customer
@@ -174,14 +175,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         runCatching {
             if (name.isBlank()) error("نام مشتری را وارد کنید")
             if (phone.isNotBlank() && !SmsSender.isValidIranMobile(phone)) error("شمارهٔ موبایل نامعتبر است")
+            // شماره همیشه یکسان ذخیره می‌شود (09xxxxxxxxx) تا تطبیق پنل/پیامک بانکی به هم نخورد
+            val cleanPhone = Phone.normalize(phone).ifBlank { phone.trim() }
             if (id == 0L) {
-                c.customers.create(name, phone, cardLast4, note, creditLimitRial)
+                c.customers.create(name, cleanPhone, cardLast4, note, creditLimitRial)
             } else {
                 val existing = c.customers.get(id) ?: error("مشتری پیدا نشد")
                 c.customers.update(
                     existing.copy(
                         name = name.trim(),
-                        phone = phone.trim(),
+                        phone = cleanPhone,
                         cardLast4 = cardLast4.trim().takeLast(4),
                         note = note.trim(),
                         creditLimitRial = creditLimitRial.coerceAtLeast(0)

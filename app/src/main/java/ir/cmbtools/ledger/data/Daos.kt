@@ -21,6 +21,10 @@ interface CustomerDao {
     @Query("SELECT * FROM customers WHERE phone = :phone LIMIT 1")
     suspend fun byPhone(phone: String): Customer?
 
+    /** همهٔ مشتریان (فعال و آرشیوشده) — برای مقایسهٔ نرمال‌شدهٔ شماره‌ها */
+    @Query("SELECT * FROM customers")
+    suspend fun all(): List<Customer>
+
     @Query("SELECT * FROM customers WHERE cardLast4 = :last4 AND archived = 0 LIMIT 1")
     suspend fun byLast4(last4: String): Customer?
 

@@ -238,13 +238,13 @@ class SyncEngine(
 
         val phoneFromComment = billing.phoneFromComment(comment)
         if (phoneFromComment.isNotBlank()) {
-            customerDao.byPhone(phoneFromComment)?.let { return it.id }
+            billing.findCustomerByPhone(phoneFromComment)?.let { return it.id }
         }
 
         customerDao.byName(name.trim())?.let { return it.id }
 
         val phoneFromName = billing.extractPhone(name)
-        if (phoneFromName.isNotBlank()) customerDao.byPhone(phoneFromName)?.let { return it.id }
+        if (phoneFromName.isNotBlank()) billing.findCustomerByPhone(phoneFromName)?.let { return it.id }
 
         val firstToken = name.trim().substringBefore(" ").trim()
         if (firstToken.length >= 3) customerDao.byName(firstToken)?.let { return it.id }

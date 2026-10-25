@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import ir.cmbtools.ledger.core.InvoiceKind
 import kotlinx.serialization.Serializable
 
 @Entity(tableName = "customers", indices = [Index(value = ["name"])])
@@ -79,18 +80,6 @@ data class Invoice(
 
     /** مبلغی که از قبل بدهکار بوده و در این فاکتور هم آمده است */
     val carriedDebtRial: Long get() = prevBalanceRial.coerceAtLeast(0)
-}
-
-object InvoiceKind {
-    const val NEW = "NEW"
-    const val RENEW = "RENEW"
-    const val MANUAL = "MANUAL"
-
-    fun label(v: String): String = when (v) {
-        NEW -> "اکانت جدید"
-        RENEW -> "تمدید"
-        else -> "فاکتور"
-    }
 }
 
 @Entity(

@@ -37,7 +37,7 @@ object PanelSyncRules {
             if (daysList[i] == days && kotlin.math.abs(gbs[i] - gb) <= tolerance) return i
         }
         // ۲) فقط روز برابر → نزدیک‌ترین حجم
-        val sameDays = (0 until n).filter { daysList[i(it)] == days }
+        val sameDays = (0 until n).filter { daysList[it] == days }
         if (sameDays.isNotEmpty()) {
             return sameDays.minByOrNull { kotlin.math.abs(gbs[it] - gb) } ?: -1
         }

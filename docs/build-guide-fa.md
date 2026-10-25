@@ -331,9 +331,9 @@ systemProp.https.proxyPort=10809
    systemProp.https.proxyPort=10809
    ```
    سپس Sync. (پورت: v2rayN → 10809، Clash → 7890)
-3. **استفاده از آینه (بدون VPN):** فایل `settings.gradle.kts` را باز کنید. سه خط `maven("https://maven.aliyun.com/...")`
-   را ببرید و **بالای** `google()` بگذارید — هم در `pluginManagement` و هم در `dependencyResolutionManagement`.
-   (در بالای همان فایل، نمونهٔ آماده با توضیح فارسی نوشته شده.)
+3. **استفاده از آینه (بدون VPN):** در نسخهٔ جدید پروژه، آینه‌های `maven.aliyun.com` **از قبل بالای**
+   `google()` هستند، پس Sync بدون VPN هم باید کار کند. کافی است **ZIP جدید `main`** را بگیرید.
+   （اگر باز هم خطا داد، همان فایل `settings.gradle.kts` ترتیب مخازن را با توضیح فارسی در بالای خود دارد.）
 4. **پروکسی خود Android Studio:** File → Settings → Appearance & Behavior → System Settings → HTTP Proxy
    → Manual → `127.0.0.1` و پورت VPN → OK → Sync.
 5. اگر باز هم خطا داد، در ترمینال پایین Android Studio این را اجرا کنید و متن قرمز را بفرستید:

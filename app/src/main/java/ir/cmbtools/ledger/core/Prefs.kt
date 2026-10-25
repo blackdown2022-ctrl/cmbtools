@@ -51,6 +51,17 @@ data class AppSettings(
          *  {business} {customer} {invoiceNo} {datetime} {date} {package} {items}
          *  {total} {prevBalance} {totalDebt} {debt} {card} {kind} {link} {footer}
          */
+        /** قالب نسخهٔ قبل — برای مهاجرت خودکار به قالب ساختاریافته */
+        const val LEGACY_INVOICE_TEMPLATE =
+            "{business}\n" +
+                "فاکتور {invoiceNo}\n" +
+                "{customer} عزیز\n" +
+                "مبلغ: {total} ریال\n" +
+                "بابت: {items}\n" +
+                "تاریخ: {date}\n" +
+                "{link}\n" +
+                "{footer}"
+
         const val DEFAULT_INVOICE_TEMPLATE =
             "{business}\n" +
                 "فاکتور {invoiceNo}\n" +
@@ -115,7 +126,10 @@ class Prefs(context: Context) {
             gatewayPattern = sp.getString("gatewayPattern", "") ?: "",
             businessName = sp.getString("businessName", defaults.businessName) ?: defaults.businessName,
             invoiceFooter = sp.getString("invoiceFooter", "") ?: "",
-            invoiceTemplate = sp.getString("invoiceTemplate", defaults.invoiceTemplate) ?: defaults.invoiceTemplate,
+            // اگر کاربر قالب پیش‌فرض قدیمی را (بدون تاریخ‌وساعت/بسته/کارت/بدهی) داشت،
+            // خودکار به قالب ساختاریافتهٔ جدید ارتقا می‌یابد. قالب‌های دستی دست‌نخورده می‌مانند.
+            invoiceTemplate = (sp.getString("invoiceTemplate", defaults.invoiceTemplate) ?: defaults.invoiceTemplate)
+                .let { if (it.trim() == AppSettings.LEGACY_INVOICE_TEMPLATE.trim()) defaults.invoiceTemplate else it },
             fallbackSubscriptionBase = sp.getString("fallbackSubscriptionBase", "") ?: "",
             autoMatchBankSms = sp.getBoolean("autoMatchBankSms", true),
             autoMatchMaxRial = sp.getLong("autoMatchMaxRial", defaults.autoMatchMaxRial),

@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import ir.cmbtools.ledger.core.AppSettings
 import ir.cmbtools.ledger.core.Jalali
 import ir.cmbtools.ledger.core.Money
 import ir.cmbtools.ledger.core.SmsGatewayProvider
@@ -314,10 +315,18 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     maxLines = 10
                 )
                 Text(
-                    "متغیرها: {business} {invoiceNo} {customer} {total} {items} {date} {link} {footer}",
+                    "متغیرها: {business} {customer} {invoiceNo} {datetime} {date} {package} {kind} " +
+                        "{items} {total} {prevBalance} {totalDebt} {debt} {card} {link} {footer}",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )
+                TextButton(
+                    onClick = {
+                        template = AppSettings.DEFAULT_INVOICE_TEMPLATE
+                        vm.updateSettings { it.copy(invoiceTemplate = AppSettings.DEFAULT_INVOICE_TEMPLATE) }
+                        vm.report("قالب پیامک به حالت پیش‌فرض (ساختاریافته) بازگشت")
+                    }
+                ) { Text("بازگردانی قالب پیش‌فرض") }
                 Spacer(Modifier.height(8.dp))
                 LabeledField("امضای پیامک ({footer})", footer, { footer = it })
                 Spacer(Modifier.height(8.dp))

@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import ir.cmbtools.ledger.core.InvoiceKind
 import ir.cmbtools.ledger.core.InvoiceStatus
 import ir.cmbtools.ledger.core.Jalali
 import ir.cmbtools.ledger.core.Money
@@ -147,7 +148,8 @@ fun InvoicesScreen(vm: AppViewModel, nav: NavHostController) {
                         )
                         Text(
                             Jalali.formatEpochDay(inv.issuedAtEpochDay) +
-                                (if (inv.panelUserUuid.isNotBlank()) " • اکانت متصل" else ""),
+                                (if (inv.packageName.isNotBlank()) " • " + inv.packageName else "") +
+                                (if (inv.kind != InvoiceKind.MANUAL) " • " + InvoiceKind.label(inv.kind) else ""),
                             color = TextMuted,
                             style = MaterialTheme.typography.labelMedium
                         )

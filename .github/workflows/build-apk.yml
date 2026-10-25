@@ -7,7 +7,9 @@ name: Build APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - 'arena/**'
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -15,6 +17,10 @@ on:
 permissions:
   contents: read
   issues: write
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   build:
@@ -35,10 +41,10 @@ jobs:
       # و اگر پلتفرم ۳۴ نبود، نصبش می‌کنیم (بدون اکشن خارجی، چون گاهی خطا می‌دهد).
       - name: آماده‌سازی Android SDK
         run: |
-          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then SDK=/usr/local/lib/android/sdk; fi
           echo "SDK=$SDK"
-          ls "$SDK" || true
           echo "sdk.dir=$SDK" > local.properties
           SDKMGR="$SDK/cmdline-tools/latest/bin/sdkmanager"
           if [ -x "$SDKMGR" ] && [ ! -d "$SDK/platforms/android-34" ]; then
@@ -68,14 +74,20 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: تست‌های واحد
-        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
+        id: tests
         continue-on-error: true
+        run: |
+          set -o pipefail
+          ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
 
       - name: ساخت APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+        id: apk
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
 
       - name: آپلود APK
-        if: success()
+        if: steps.apk.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: hazine-daftar-apk
@@ -94,17 +106,35 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      # در صورت خطا، متن خطا را در ایشو شمارهٔ ۵ می‌نویسیم تا قابل خواندن باشد
+      # در صورت خطا، خلاصهٔ خطاها را در ایشو شمارهٔ ۵ می‌نویسیم تا قابل خواندن باشد
       # (لاگ خام Actions از این محیط در دسترس نیست و این راه، جایگزین آن است).
       - name: ثبت خطا برای بررسی
-        if: failure()
+        if: failure() || steps.tests.outcome == 'failure' || steps.apk.outcome == 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           {
-            echo "### خطای بیلد"
+            echo "### گزارش بیلد — اجرا ${GITHUB_RUN_ID}"
+            echo ""
+            echo "#### خطاهای کامپایل کاتلین (\`e:\`)"
             echo '```'
-            tail -c 6000 build.log 2>/dev/null || true
+            grep -E '^e: ' build.log test.log 2>/dev/null | head -80 || echo "(هیچ)"
+            echo '```'
+            echo ""
+            echo "#### خطاهای Gradle / Android (\`error:\`)"
+            echo '```'
+            grep -E 'error:|Error:|Could not|Unresolved|Caused by' build.log 2>/dev/null | head -40 || echo "(هیچ)"
+            echo '```'
+            echo ""
+            echo "#### بخش «What went wrong»"
+            echo '```'
+            grep -A 25 -E 'What went wrong|FAILURE: Build failed' build.log 2>/dev/null | head -70 || echo "(هیچ)"
+            echo '```'
+            echo ""
+            echo "#### نتیجهٔ تست‌ها"
+            echo '```'
+            grep -E '^e: |tests? completed|FAILED' test.log 2>/dev/null | head -40 || echo "(هیچ)"
             echo '```'
           } > error-report.md
+          wc -c error-report.md
           gh issue comment 5 --body-file error-report.md || true

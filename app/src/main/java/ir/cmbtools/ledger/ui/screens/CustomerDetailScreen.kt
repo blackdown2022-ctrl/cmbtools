@@ -474,13 +474,26 @@ private fun RenewDialog(
     onDismiss: () -> Unit,
     onDone: () -> Unit
 ) {
-    var plan by remember { mutableStateOf(plans.firstOrNull()) }
-    var gb by remember { mutableStateOf(plans.firstOrNull()?.gb?.toString() ?: "30") }
-    var days by remember { mutableStateOf(plans.firstOrNull()?.days?.toString() ?: "30") }
-    var price by remember { mutableStateOf(plans.firstOrNull()?.priceRial ?: 0L) }
-    var description by remember { mutableStateOf(plans.firstOrNull()?.name ?: "تمدید سرویس") }
-    var sendSms by remember { mutableStateOf(true) }
+    var plan by remember { mutableStateOf<ir.cmbtools.ledger.data.Plan?>(null) }
+    var gb by remember { mutableStateOf("30") }
+    var days by remember { mutableStateOf("30") }
+    var price by remember { mutableStateOf(0L) }
+    var description by remember { mutableStateOf("تمدید سرویس") }
+    var sendSms by remember { mutableStateOf(vm.settings.value.autoSmsOnInvoice) }
     var working by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+
+    // همان ریشهٔ باگ فرم فاکتور: اگر بسته‌ها بعد از باز شدن دیالوگ برسند، قیمت صفر می‌ماند.
+    LaunchedEffect(plans) {
+        if (plan == null && plans.isNotEmpty()) {
+            val first = plans.first()
+            plan = first
+            description = first.name
+            gb = first.gb.toString()
+            days = first.days.toString()
+            if (first.priceRial > 0) price = first.priceRial
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -536,12 +549,32 @@ private fun RenewDialog(
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )
+
+                if (error.isNotBlank()) {
+                    Text(
+                        error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
                 enabled = !working,
                 onClick = {
+                    val validation = when {
+                        price <= 0L -> "مبلغ فاکتور تمدید را وارد کنید"
+                        (gb.toDoubleOrNull() ?: 0.0) <= 0.0 -> "حجم بسته را وارد کنید"
+                        (days.toIntOrNull() ?: 0) <= 0 -> "تعداد روز را وارد کنید"
+                        else -> ""
+                    }
+                    if (validation.isNotBlank()) {
+                        error = validation
+                        vm.report(validation, isError = true)
+                        return@Button
+                    }
+                    error = ""
                     working = true
                     vm.renewAccount(
                         customerId = customerId,

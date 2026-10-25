@@ -116,7 +116,7 @@ class SyncEngine(
                 if (shouldInvoiceNew || shouldInvoiceRenew) {
                     // ۱) مشتری: اتصال موجود، یا ساخت خودکار از نام کاربر پنل
                     if (customerId <= 0) {
-                        val created = runCatching { billing.resolveOrCreateCustomer(u.name) }.getOrNull()
+                        val created = runCatching { billing.resolveOrCreateCustomer(u.name, u.comment) }.getOrNull()
                         if (created != null) customerId = created.id
                     }
 
@@ -224,15 +224,27 @@ class SyncEngine(
      * ۳) شمارهٔ موبایل داخل نام/کامنت
      * ۴) اولین کلمهٔ نام
      */
+    /**
+     * اتصال کاربر پنل به مشتری محلی، به ترتیب اولویت:
+     *  ۱) کامنت خودکار `cmbtools:<id>` (اگر اکانت را خود اپ ساخته باشد)
+     *  ۲) **شمارهٔ موبایل داخل یادداشت/کامنت پنل** ← کاربر شمارهٔ مشتری را همان‌جا می‌نویسد
+     *  ۳) نام دقیق مشتری
+     *  ۴) شمارهٔ موبایل داخل نام کاربر پنل
+     *  ۵) اولین کلمهٔ نام
+     */
     suspend fun resolveCustomerId(comment: String?, name: String): Long {
-        if (comment != null && comment.startsWith("cmbtools:")) {
-            val id = comment.removePrefix("cmbtools:").substringBefore(":").toLongOrNull()
-            if (id != null && id > 0 && customerDao.byId(id) != null) return id
+        val idFromComment = billing.customerIdFromComment(comment)
+        if (idFromComment > 0 && customerDao.byId(idFromComment) != null) return idFromComment
+
+        val phoneFromComment = billing.phoneFromComment(comment)
+        if (phoneFromComment.isNotBlank()) {
+            customerDao.byPhone(phoneFromComment)?.let { return it.id }
         }
+
         customerDao.byName(name.trim())?.let { return it.id }
 
-        val phone = billing.extractPhone(name)
-        if (phone.isNotBlank()) customerDao.byPhone(phone)?.let { return it.id }
+        val phoneFromName = billing.extractPhone(name)
+        if (phoneFromName.isNotBlank()) customerDao.byPhone(phoneFromName)?.let { return it.id }
 
         val firstToken = name.trim().substringBefore(" ").trim()
         if (firstToken.length >= 3) customerDao.byName(firstToken)?.let { return it.id }

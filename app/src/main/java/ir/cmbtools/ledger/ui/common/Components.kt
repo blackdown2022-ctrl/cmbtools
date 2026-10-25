@@ -33,6 +33,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -162,8 +163,14 @@ fun AmountField(
     modifier: Modifier = Modifier,
     hint: String = "به ریال"
 ) {
-    var text by remember(valueRial) {
-        mutableStateOf(if (valueRial == 0L) "" else Money.toPersian(valueRial.toString()))
+    // مقدار نمایشی از بیرون هم به‌روز می‌شود (مثلاً انتخاب بسته)، ولی هنگام تایپ، متن
+    // کاربر بازنویسی نمی‌شود. نسخهٔ قبلی با remember(valueRial) هر تغییر بیرونی، حالت
+    // فیلد را از نو می‌ساخت و در بعضی حالت‌ها صفر شدن مقدار را پنهان می‌کرد.
+    fun render(v: Long): String = if (v == 0L) "" else Money.toPersian(v.toString())
+    var text by remember { mutableStateOf(render(valueRial)) }
+    LaunchedEffect(valueRial) {
+        val typed = Money.toLatinDigits(text).filter { it.isDigit() }.toLongOrNull() ?: 0L
+        if (typed != valueRial) text = render(valueRial)
     }
     OutlinedTextField(
         value = text,

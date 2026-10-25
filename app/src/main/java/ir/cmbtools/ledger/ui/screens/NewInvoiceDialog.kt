@@ -1,5 +1,6 @@
 package ir.cmbtools.ledger.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,15 +9,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,11 +35,20 @@ import ir.cmbtools.ledger.data.Plan
 import ir.cmbtools.ledger.ui.AppViewModel
 import ir.cmbtools.ledger.ui.common.AmountField
 import ir.cmbtools.ledger.ui.common.CustomerPickerDialog
-import ir.cmbtools.ledger.ui.common.DropdownField
 import ir.cmbtools.ledger.ui.common.LabeledField
 import ir.cmbtools.ledger.ui.common.SectionCard
 import ir.cmbtools.ledger.ui.theme.TextMuted
 
+/**
+ * فرم صدور فاکتور (+ ساخت اکانت در پنل).
+ *
+ * نکته‌های مهم که باعث می‌شد دکمهٔ «صدور فاکتور» غیرفعال بماند و اینجا رفع شده‌اند:
+ *  ۱) بسته‌ها به‌صورت async می‌آیند؛ اگر فرم قبل از رسیدن آن‌ها ساخته می‌شد، قیمت صفر می‌ماند.
+ *     حالا با LaunchedEffect اولین بسته انتخاب و قیمتش پر می‌شود.
+ *  ۲) انتخاب بسته با DropdownField (ExposedDropdownMenu) داخل AlertDialog روی بعضی گوشی‌ها
+ *     باز نمی‌شد؛ حالا ردیف چیپ‌های افقی است که همیشه کار می‌کند.
+ *  ۳) دکمه دیگر «بی‌صدا» غیرفعال نمی‌شود: همیشه قابل لمس است و دلیل ناقص بودن فرم را می‌گوید.
+ */
 @Composable
 fun NewInvoiceDialog(
     vm: AppViewModel,
@@ -52,11 +63,11 @@ fun NewInvoiceDialog(
     var selectedCustomer by remember {
         mutableStateOf(customers.firstOrNull { it.customer.id == presetCustomerId }?.customer)
     }
-    var selectedPlan by remember { mutableStateOf(plans.firstOrNull()) }
-    var description by remember { mutableStateOf(selectedPlan?.name ?: "") }
-    var gbText by remember { mutableStateOf(selectedPlan?.gb?.toString() ?: "30") }
-    var daysText by remember { mutableStateOf(selectedPlan?.days?.toString() ?: "30") }
-    var priceRial by remember { mutableStateOf(selectedPlan?.priceRial ?: 0L) }
+    var selectedPlan by remember { mutableStateOf<Plan?>(null) }
+    var description by remember { mutableStateOf("") }
+    var gbText by remember { mutableStateOf("30") }
+    var daysText by remember { mutableStateOf("30") }
+    var priceRial by remember { mutableStateOf(0L) }
     var discountRial by remember { mutableStateOf(0L) }
     // پیش‌فرض از تنظیمات می‌آید: ساخت اکانت + ارسال فوری پیامک فاکتور
     var createAccount by remember { mutableStateOf(true) }
@@ -65,13 +76,35 @@ fun NewInvoiceDialog(
     var note by remember { mutableStateOf("") }
     var showPicker by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
+    var formError by remember { mutableStateOf("") }
 
     fun applyPlan(plan: Plan) {
         selectedPlan = plan
         description = plan.name
         gbText = plan.gb.toString()
         daysText = plan.days.toString()
-        priceRial = plan.priceRial
+        // قیمت بسته اعمال می‌شود؛ اگر صفر بود (بستهٔ رایگان) کاربر می‌تواند دستی بنویسد
+        if (plan.priceRial > 0) priceRial = plan.priceRial
+        formError = ""
+    }
+
+    // ① اگر مشتری از قبل تعیین شده ولی لیست مشتری‌ها دیر رسیده است
+    LaunchedEffect(customers, presetCustomerId) {
+        if (selectedCustomer == null && presetCustomerId > 0) {
+            selectedCustomer = customers.firstOrNull { it.customer.id == presetCustomerId }?.customer
+        }
+    }
+
+    // ② انتخاب خودکار اولین بسته به‌محض رسیدن لیست (ریشهٔ اصلی مشکل «دکمه فعال نمی‌شود»)
+    LaunchedEffect(plans) {
+        if (selectedPlan == null && plans.isNotEmpty()) applyPlan(plans.first())
+    }
+
+    val total = (priceRial - discountRial).coerceAtLeast(0)
+    val missing = when {
+        selectedCustomer == null -> "مشتری انتخاب نشده است"
+        priceRial <= 0L -> "مبلغ فاکتور را وارد کنید یا یک بسته انتخاب کنید"
+        else -> ""
     }
 
     AlertDialog(
@@ -90,14 +123,35 @@ fun NewInvoiceDialog(
                 }
 
                 if (plans.isNotEmpty()) {
-                    DropdownField(
-                        label = "بسته",
-                        items = plans,
-                        selected = selectedPlan,
-                        itemLabel = { p ->
-                            "${p.name} • ${Money.toPersian(p.gb.toString())} گیگ / ${Money.toPersian(p.days.toString())} روز"
-                        },
-                        onSelect = { applyPlan(it) }
+                    Text("بسته", color = TextMuted, style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        plans.forEach { plan ->
+                            FilterChip(
+                                selected = selectedPlan?.id == plan.id,
+                                onClick = { applyPlan(plan) },
+                                label = { Text(plan.name) }
+                            )
+                        }
+                    }
+                    selectedPlan?.let { plan ->
+                        Text(
+                            Money.toPersian(plan.gb.toString()) + " گیگ • " +
+                                Money.toPersian(plan.days.toString()) + " روز • " +
+                                Money.format(plan.priceRial),
+                            color = TextMuted,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                } else {
+                    Text(
+                        "بسته‌ای تعریف نشده است؛ می‌توانید حجم/روز و مبلغ را دستی وارد کنید.",
+                        color = TextMuted,
+                        style = MaterialTheme.typography.labelMedium
                     )
                 }
 
@@ -118,7 +172,7 @@ fun NewInvoiceDialog(
                         keyboardType = KeyboardType.Number
                     )
                 }
-                AmountField("مبلغ (ریال)", priceRial, { priceRial = it })
+                AmountField("مبلغ (ریال)", priceRial, { priceRial = it; formError = "" })
                 AmountField("تخفیف (ریال)", discountRial, { discountRial = it })
                 LabeledField(
                     "سررسید (روز، ۰ = نقدی)",
@@ -133,7 +187,7 @@ fun NewInvoiceDialog(
                         title = "ساخت اکانت در پنل هیدی‌فای",
                         checked = createAccount,
                         onChange = { createAccount = it },
-                        hint = if (selectedPlan == null) "بسته‌ای انتخاب نشده" else null
+                        hint = "شمارهٔ مشتری در «یادداشت» کاربر پنل ثبت می‌شود"
                     )
                     SwitchRow(
                         title = "ارسال فاکتور با پیامک",
@@ -141,25 +195,46 @@ fun NewInvoiceDialog(
                         onChange = { sendSms = it },
                         hint = "روش: " + if (settings.smsMode == "SIM") "سیم‌کارت گوشی" else "درگاه پیامکی"
                     )
-                    val total = (priceRial - discountRial).coerceAtLeast(0)
                     Text(
                         "مبلغ نهایی: ${Money.format(total)}",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
+
+                // دلیل غیرفعال نبودن در دسترس بودن دکمه: پیام روشن زیر فرم
+                val message = formError.ifBlank { missing }
+                if (message.isNotBlank()) {
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
+                }
                 Spacer(Modifier.height(4.dp))
             }
         },
         confirmButton = {
             Button(
-                enabled = !submitting && selectedCustomer != null && priceRial > 0,
+                // عمداً همیشه فعال است (به‌جز هنگام ارسال) تا کاربر هیچ‌وقت در بن‌بست نماند
+                enabled = !submitting,
                 onClick = {
+                    val validation = when {
+                        selectedCustomer == null -> "ابتدا مشتری را انتخاب کنید"
+                        priceRial <= 0L -> "مبلغ فاکتور باید بیشتر از صفر باشد"
+                        createAccount && (gbText.toDoubleOrNull() ?: 0.0) <= 0.0 ->
+                            "برای ساخت اکانت، حجم بسته را وارد کنید"
+                        createAccount && (daysText.toIntOrNull() ?: 0) <= 0 ->
+                            "برای ساخت اکانت، تعداد روز را وارد کنید"
+                        else -> ""
+                    }
+                    if (validation.isNotBlank()) {
+                        formError = validation
+                        vm.report(validation, isError = true)
+                        return@Button
+                    }
+                    formError = ""
                     submitting = true
                     vm.issueInvoice(
                         customerId = selectedCustomer!!.id,
                         planId = selectedPlan?.id ?: 0,
-                        description = description,
+                        description = description.ifBlank { selectedPlan?.name ?: "سرویس" },
                         gb = gbText.toDoubleOrNull() ?: 0.0,
                         days = daysText.toIntOrNull() ?: 0,
                         priceRial = priceRial,
@@ -184,6 +259,7 @@ fun NewInvoiceDialog(
             onDismiss = { showPicker = false },
             onPick = { c: Customer ->
                 selectedCustomer = c
+                formError = ""
                 showPicker = false
             }
         )

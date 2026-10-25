@@ -3,6 +3,7 @@ package ir.cmbtools.ledger.billing
 import ir.cmbtools.ledger.core.AppSettings
 import ir.cmbtools.ledger.core.InvoiceKind
 import ir.cmbtools.ledger.core.Money
+import ir.cmbtools.ledger.core.Phone
 import ir.cmbtools.ledger.core.PanelSyncRules
 import ir.cmbtools.ledger.core.Prefs
 import ir.cmbtools.ledger.data.Customer
@@ -256,35 +257,73 @@ class AutoBilling(
 
     /**
      * پیدا کردن مشتری برای کاربر پنل؛ اگر نبود و اجازه داشته باشیم، مشتری می‌سازد.
-     * نام کاربر پنل ممکن است شمارهٔ موبایل داشته باشد (۰۹xxxxxxxxx) که استخراج می‌شود.
+     *
+     * منابع شماره، به ترتیب اولویت:
+     *  ۱) **یادداشت/کامنت کاربر در پنل** — چون کاربر شمارهٔ مشتری را همان‌جا می‌نویسد
+     *  ۲) شماره‌ای که داخل نام کاربر پنل باشد
+     *
+     * اگر مشتریِ موجود شماره نداشت و در یادداشت پنل شماره بود، شماره به پروفایلش اضافه می‌شود.
      */
     suspend fun resolveOrCreateCustomer(
         panelName: String,
+        panelComment: String? = null,
         allowCreate: Boolean = settings.autoCreateCustomerFromPanel
     ): Customer? {
         val cleanName = sanitizePanelName(panelName)
-        if (cleanName.isBlank()) return null
+        val phone = phoneFromComment(panelComment).ifBlank { Phone.extract(panelName) }
+        val linkedId = customerIdFromComment(panelComment)
 
-        customers.byName(cleanName)?.let { return it }
-        val phone = extractPhone(panelName)
-
-        if (!allowCreate) {
-            // حتی اگر اجازهٔ ساخت نداریم، شاید همان شماره قبلاً ثبت شده باشد
-            if (phone.isNotBlank()) customers.byPhone(phone)?.let { return it }
-            return null
+        // ۱) اگر خود اپ قبلاً این اکانت را ساخته و شناسه را در یادداشت گذاشته است
+        if (linkedId > 0) {
+            customers.byId(linkedId)?.let { found ->
+                return withPhone(found, phone)
+            }
+        }
+        // ۲) شمارهٔ داخل یادداشت پنل (سناریوی اصلی: کاربر شماره را در یادداشت می‌نویسد)
+        if (phone.isNotBlank()) customers.byPhone(phone)?.let { return it }
+        // ۳) نام دقیق
+        customers.byName(cleanName)?.let { return withPhone(it, phone) }
+        // ۴) اولین کلمهٔ نام
+        val firstToken = cleanName.substringBefore(" ").trim()
+        if (firstToken.length >= 3) {
+            customers.byName(firstToken)?.let { return withPhone(it, phone) }
         }
 
-        val existingByPhone = if (phone.isNotBlank()) customers.byPhone(phone) else null
-        if (existingByPhone != null) return existingByPhone
+        if (!allowCreate || cleanName.isBlank()) return null
 
         val id = customers.insert(
             Customer(
-                name = cleanName,
+                name = cleanName.ifBlank { phone },
                 phone = phone,
-                note = "ایجاد خودکار از پنل"
+                note = "ایجاد خودکار از پنل هیدی‌فای"
             )
         )
         return customers.byId(id)
+    }
+
+    /** اگر مشتری شماره نداشت ولی در یادداشت پنل شماره بود، آن را ثبت می‌کند */
+    private suspend fun withPhone(customer: Customer, phone: String): Customer {
+        if (phone.isBlank() || customer.phone == phone) return customer
+        if (customer.phone.isNotBlank()) return customer
+        val updated = customer.copy(phone = phone)
+        customers.update(updated)
+        return updated
+    }
+
+    /** شناسهٔ مشتری از کامنت `cmbtools:<id>:<...>` (نوشتهٔ خود این اپ) */
+    fun customerIdFromComment(comment: String?): Long {
+        if (comment == null) return 0
+        val trimmed = comment.trim()
+        if (!trimmed.startsWith("cmbtools:") && !trimmed.startsWith("cmbtools|")) return 0
+        val rest = trimmed.removePrefix("cmbtools:").removePrefix("cmbtools|")
+        return rest.substringBefore(":").substringBefore("|").trim().toLongOrNull()?.takeIf { it > 0 } ?: 0
+    }
+
+    /** شمارهٔ موبایل داخل یادداشت/کامنت کاربر پنل */
+    fun phoneFromComment(comment: String?): String {
+        if (comment.isNullOrBlank()) return ""
+        if (customerIdFromComment(comment) > 0 && Phone.extract(comment).isBlank()) return ""
+        return Phone.extract(comment)
     }
 
     /** حذف شمارهٔ فاکتور و نام بسته از انتهای نام کاربر پنل (که خود اپ اضافه کرده بود) */
@@ -295,14 +334,6 @@ class AutoBilling(
         return name.trim()
     }
 
-    /** اولین شمارهٔ موبایل ایرانی داخل متن */
-    fun extractPhone(text: String): String {
-        val normalized = Money.toLatinDigits(text)
-            .replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
-        Regex("""(?:\+98|0098|98|0)?9\d{9}""").find(normalized)?.let { m ->
-            val digits = m.value.takeLast(10)
-            return "0$digits"
-        }
-        return ""
-    }
+    /** اولین شمارهٔ موبایل ایرانی داخل متن (سازگاری با کد قبلی) */
+    fun extractPhone(text: String): String = Phone.extract(text)
 }

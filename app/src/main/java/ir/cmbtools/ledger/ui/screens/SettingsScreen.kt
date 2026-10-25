@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import ir.cmbtools.ledger.BuildConfig
 import ir.cmbtools.ledger.core.AppSettings
 import ir.cmbtools.ledger.core.Jalali
 import ir.cmbtools.ledger.core.Money
@@ -456,7 +457,16 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
             }
 
             SectionCard(title = "درباره") {
-                Text("حساب‌دفتر من — نسخهٔ 0.1.0", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "تیزنت — نسخهٔ " + Money.toPersian(BuildConfig.VERSION_NAME),
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "شمارهٔ ساخت: " + Money.toPersian(BuildConfig.VERSION_CODE.toString()) +
+                        "  •  اندروید " + Money.toPersian(android.os.Build.VERSION.RELEASE ?: ""),
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
                 Text(
                     "اپ شخصی حسابداری + مدیریت پنل هیدی‌فای ۱۴. ساخته‌شده برای استفادهٔ تک‌کاربره روی گوشی خودتان.",
                     color = TextMuted,

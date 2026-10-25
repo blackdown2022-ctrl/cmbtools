@@ -6,6 +6,7 @@ import ir.cmbtools.ledger.core.InvoiceKind
 import ir.cmbtools.ledger.core.InvoiceStatus
 import ir.cmbtools.ledger.core.Money
 import ir.cmbtools.ledger.core.PanelSyncRules
+import ir.cmbtools.ledger.core.Phone
 import ir.cmbtools.ledger.sms.BankSmsParser
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.data.Customer
@@ -269,5 +270,46 @@ class InvoiceTemplateTest {
         val t = AppSettings.DEFAULT_INVOICE_TEMPLATE
         listOf("{customer}", "{invoiceNo}", "{datetime}", "{package}", "{total}", "{debt}", "{card}")
             .forEach { assertTrue("قالب پیش‌فرض باید $it را داشته باشد", t.contains(it)) }
+    }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  شمارهٔ موبایل: نرمال‌سازی + خواندن از «یادداشت/کامنت» کاربر پنل
+// ─────────────────────────────────────────────────────────────────────────────
+
+class PhoneTest {
+
+    @Test
+    fun normalizes_all_common_formats() {
+        assertEquals("09121234567", Phone.normalize("09121234567"))
+        assertEquals("09121234567", Phone.normalize("۰۹۱۲۱۲۳۴۵۶۷"))     // ارقام فارسی
+        assertEquals("09121234567", Phone.normalize("+989121234567"))
+        assertEquals("09121234567", Phone.normalize("00989121234567"))
+        assertEquals("09121234567", Phone.normalize("989121234567"))
+        assertEquals("09121234567", Phone.normalize("9121234567"))
+        assertEquals("09121234567", Phone.normalize("0912-123-4567"))
+        assertEquals("09121234567", Phone.normalize(" 0912 123 4567 "))
+        assertEquals("", Phone.normalize("021123456"))                  // تلفن ثابت
+        assertEquals("", Phone.normalize(""))
+    }
+
+    @Test
+    fun extracts_phone_from_panel_comment() {
+        // یادداشت کاربر در پنل: گاهی فقط شماره، گاهی با متن اضافه
+        assertEquals("09121234567", Phone.extract("09121234567"))
+        assertEquals("09121234567", Phone.extract("شماره: 09121234567"))
+        assertEquals("09121234567", Phone.extract("علی - ۰۹۱۲۱۲۳۴۵۶۷ - یک‌ماهه"))
+        assertEquals("09121234567", Phone.extract("+98 912 123 4567"))
+        assertEquals("", Phone.extract("cmbtools:12:علی رضایی"))
+        assertEquals("", Phone.extract(""))
+    }
+
+    @Test
+    fun validates_mobile_numbers() {
+        assertTrue(Phone.isValid("09121234567"))
+        assertTrue(Phone.isValid("+989121234567"))
+        assertFalse(Phone.isValid("02188776655"))
+        assertFalse(Phone.isValid("12345"))
     }
 }

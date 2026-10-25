@@ -14,8 +14,11 @@ android {
         applicationId = "ir.cmbtools.ledger"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        // ── نسخه‌بندی ────────────────────────────────────────────────
+        // برای هر آپدیت: versionCode یکی زیاد شود و versionName طبق قاعدهٔ زیر:
+        //   تغییر بزرگ → 1.0.0     قابلیت جدید → 0.x.0     رفع باگ → 0.x.y
+        versionCode = 2
+        versionName = "0.2.0"
         resourceConfigurations += listOf("fa", "en")
     }
 
@@ -38,6 +41,8 @@ android {
 
     buildFeatures {
         compose = true
+        // برای نمایش شمارهٔ نسخه داخل اپ (BuildConfig.VERSION_NAME)
+        buildConfig = true
     }
 
     packaging {

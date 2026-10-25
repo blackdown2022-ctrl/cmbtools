@@ -1,5 +1,6 @@
 package ir.cmbtools.ledger.panel
 
+import ir.cmbtools.ledger.core.Phone
 import ir.cmbtools.ledger.core.Prefs
 import ir.cmbtools.ledger.data.CustomerDao
 import ir.cmbtools.ledger.data.PanelAccount
@@ -60,11 +61,15 @@ class PanelService(
             if (planName.isNotBlank()) append(" - ").append(planName)
         }.take(120)
 
+        // یادداشت کاربر در پنل = شمارهٔ مشتری (تا همان‌جا قابل خواندن و ویرایش باشد).
+        // اگر مشتری شماره نداشت، شناسهٔ داخلی نوشته می‌شود تا اتصال حفظ شود.
+        val comment = Phone.normalize(customer.phone)
+            .ifBlank { "cmbtools:${customer.id}:${customer.name}" }
         val user = client.createUser(
             name = name,
             gb = gb,
             days = days,
-            comment = "cmbtools:${customer.id}:${customer.name}"
+            comment = comment
         )
         val linkBase = (runCatching { client.fetchUsers().second.linkDomains.firstOrNull()?.base }.getOrNull())
             ?: prefs.current.fallbackSubscriptionBase

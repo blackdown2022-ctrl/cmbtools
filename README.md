@@ -30,6 +30,11 @@
 
 > 🧑‍🎓 **تازه‌کار هستید؟** راهنمای کامل و سادهٔ ساخت اپ در Android Studio (از نصب تا نصب روی گوشی):
 > [`docs/build-guide-fa.md`](docs/build-guide-fa.md)
+>
+> ⚡ **می‌خواهید بدون Android Studio فقط APK بگیرید؟** تب **Actions** در گیت‌هاب →
+> **Build APK** → **Run workflow** → از بخش Artifacts فایل APK را دانلود کنید.
+>
+> 🚧 **خطای `Plugin ... was not found` گرفتید؟** [`docs/fix-plugin-error-fa.md`](docs/fix-plugin-error-fa.md)
 
 ## ساخت APK
 

@@ -28,6 +28,21 @@
 
 ---
 
+## ⬇️ نصب سریع (بدون Android Studio)
+
+آخرین نسخهٔ آماده را مستقیم روی گوشی نصب کنید:
+
+1. روی گوشی این لینک را باز کنید:
+   **https://github.com/blackdown2022-ctrl/cmbtools/releases/latest**
+2. در بخش **Assets** فایل `app-debug.apk` را دانلود کنید.
+3. اگر پرسید، برای مرورگر اجازهٔ *Install unknown apps* را بدهید → **Install**.
+4. اگر Play Protect هشدار داد → **Install anyway** (اپ مجوز پیامک دارد، طبیعی است).
+
+> این APK روی سرورهای گیت‌هاب ساخته و امضا شده است. کد منبع و نتیجهٔ تست‌ها در تب
+> **Actions** قابل مشاهده است. برای نسخهٔ کاملاً مستقل، با Android Studio و keystore خودتان امضا کنید.
+
+---
+
 > 🧑‍🎓 **تازه‌کار هستید؟** راهنمای کامل و سادهٔ ساخت اپ در Android Studio (از نصب تا نصب روی گوشی):
 > [`docs/build-guide-fa.md`](docs/build-guide-fa.md)
 >

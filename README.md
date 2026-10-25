@@ -40,6 +40,9 @@
 3. اگر پرسید، برای مرورگر اجازهٔ *Install unknown apps* را بدهید → **Install**.
 4. اگر Play Protect هشدار داد → **Install anyway** (اپ مجوز پیامک دارد، طبیعی است).
 
+> **آخرین نسخه (دارای همگام‌سازی خودکار و فاکتور خودکار):**
+> https://github.com/blackdown2022-ctrl/cmbtools/releases/latest
+>
 > این APK روی سرورهای گیت‌هاب ساخته و امضا شده است. کد منبع و نتیجهٔ تست‌ها در تب
 > **Actions** قابل مشاهده است. برای نسخهٔ کاملاً مستقل، با Android Studio و keystore خودتان امضا کنید.
 

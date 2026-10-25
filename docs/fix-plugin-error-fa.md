@@ -37,10 +37,11 @@ Searched in the following repositories:
 ```kotlin
 pluginManagement {
     repositories {
+        // آینه‌های سالم (تست‌شده). مخزن aliyun/public خطای 502 می‌دهد و حذف شده است.
         maven("https://maven.aliyun.com/repository/google")
-        maven("https://maven.aliyun.com/repository/public")
-        maven("https://maven.aliyun.com/repository/gradle-plugin")
         maven("https://repo.huaweicloud.com/repository/maven/")
+        maven("https://maven.aliyun.com/repository/gradle-plugin")
+
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -51,8 +52,8 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         maven("https://maven.aliyun.com/repository/google")
-        maven("https://maven.aliyun.com/repository/public")
         maven("https://repo.huaweicloud.com/repository/maven/")
+
         google()
         mavenCentral()
     }

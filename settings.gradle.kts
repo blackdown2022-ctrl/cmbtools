@@ -1,21 +1,25 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  تنظیم مخازن (Repositories)
+//  تنظیم مخازن (Repositories) — بدون نیاز به VPN
 //
-//  ترتیب پیش‌فرض: آینه‌ها (Aliyun/Huawei) اول، سپس google() و mavenCentral().
-//  دلیل: در ایران دسترسی به dl.google.com معمولاً بسته است و اگر google() اول
-//  باشد، Gradle با خطای «Plugin ... was not found» یا timeout متوقف می‌شود.
+//  ترتیب انتخاب‌شده بر اساس تست واقعی دسترس‌پذیری:
+//    ✅ https://maven.aliyun.com/repository/google         (پلاگین/کتابخانه‌های اندروید)
+//    ✅ https://repo.huaweicloud.com/repository/maven/     (آینهٔ Maven Central)
+//    ✅ https://maven.aliyun.com/repository/gradle-plugin  (پلاگین‌های Gradle)
 //
-//  اگر اینترنت آزاد/VPN دارید و Sync کند است، دو بلوک زیر را جابه‌جا کنید:
-//  google() و mavenCentral() را بالای آینه‌ها ببرید.
+//  ⚠️ مخزن «maven.aliyun.com/repository/public» عمداً حذف شده است: این آینه
+//  اغلب خطای 502 Bad Gateway می‌دهد و Gradle در برخورد با خطای ۵xx کل
+//  Resolve را Fail می‌کند (خطای «Plugin ... was not found»).
+//
+//  اگر اینترنت آزاد دارید و Sync کند است، google() و mavenCentral() را
+//  بالاتر از آینه‌ها ببرید.
 // ─────────────────────────────────────────────────────────────────────────────
 
 pluginManagement {
     repositories {
-        // ① آینه‌ها (بدون نیاز به VPN)
+        // ① آینه‌های سالم (سریع در ایران، بدون VPN)
         maven("https://maven.aliyun.com/repository/google")
-        maven("https://maven.aliyun.com/repository/public")
-        maven("https://maven.aliyun.com/repository/gradle-plugin")
         maven("https://repo.huaweicloud.com/repository/maven/")
+        maven("https://maven.aliyun.com/repository/gradle-plugin")
 
         // ② مخازن رسمی (پشتیبان)
         google()
@@ -28,7 +32,6 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         maven("https://maven.aliyun.com/repository/google")
-        maven("https://maven.aliyun.com/repository/public")
         maven("https://repo.huaweicloud.com/repository/maven/")
 
         google()

@@ -17,7 +17,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 class PanelException(message: String, val kind: Kind = Kind.GENERIC) : Exception(message) {
-    enum class Kind { NOT_CONFIGURED, AUTH, NETWORK, NOT_FOUND, SERVER, LIMIT }
+    enum class Kind { GENERIC, NOT_CONFIGURED, AUTH, NETWORK, NOT_FOUND, SERVER, LIMIT }
 }
 
 data class PanelConnection(

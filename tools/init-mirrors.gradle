@@ -1,0 +1,39 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  اسکریپت init برای Gradle — «راه دوم» رفع خطای دانلود پلاگین اندروید
+//
+//  این فایل روی همهٔ پروژه‌های Gradle این کامپیوتر اثر می‌گذارد و مخازن
+//  جایگزین را اضافه می‌کند — حتی اگر فایل settings.gradle.kts پروژه قدیمی باشد.
+//
+//  نصب (ویندوز):
+//    1) پوشهٔ زیر را بسازید (اگر نیست):
+//         C:\Users\<نام‌کاربری>\.gradle\init.d
+//    2) این فایل را با نام mirrors.gradle داخل آن کپی کنید.
+//    3) در Android Studio: File → Sync Project with Gradle Files
+//
+//  حذف: همین فایل را پاک کنید.
+// ─────────────────────────────────────────────────────────────────────────────
+
+def MIRRORS = [
+    'https://maven.aliyun.com/repository/google',
+    'https://maven.aliyun.com/repository/public',
+    'https://maven.aliyun.com/repository/gradle-plugin',
+    'https://repo.huaweicloud.com/repository/maven/',
+]
+
+beforeSettings { settings ->
+
+    MIRRORS.each { u ->
+        settings.pluginManagement.repositories.maven { url = uri(u) }
+    }
+    settings.pluginManagement.repositories.google()
+    settings.pluginManagement.repositories.mavenCentral()
+    settings.pluginManagement.repositories.gradlePluginPortal()
+
+    MIRRORS.each { u ->
+        settings.dependencyResolutionManagement.repositories.maven { url = uri(u) }
+    }
+    settings.dependencyResolutionManagement.repositories.google()
+    settings.dependencyResolutionManagement.repositories.mavenCentral()
+
+    println '[mirrors] مخازن جایگزین (Aliyun + Huawei) اعمال شد.'
+}

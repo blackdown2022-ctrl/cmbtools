@@ -316,6 +316,9 @@ systemProp.https.proxyPort=10809
 - بعد از تنظیم پروکسی: **File → Invalidate Caches… → Invalidate and Restart** و دوباره Sync.
 
 ### ۳-الف. `Plugin [id: 'com.android.application', version: '8.5.2'] was not found in any of the following sources`
+
+> 📄 نسخهٔ کوتاه و فقط برای همین خطا: [`fix-plugin-error-fa.md`](fix-plugin-error-fa.md)
+
 این خطا **یعنی Gradle نتوانسته پلاگین اندروید را از `dl.google.com` دانلود کند**؛ پروژه سالم است.
 
 به ترتیب این‌ها را امتحان کنید:

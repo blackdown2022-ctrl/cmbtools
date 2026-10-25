@@ -1,0 +1,78 @@
+name: Build APK
+
+# ساخت خودکار APK روی سرورهای گیت‌هاب (بدون نیاز به Android Studio روی کامپیوتر شما)
+# اجرا: تب Actions → Build APK → Run workflow
+# خروجی: در پایین همان اجرا، بخش Artifacts → hazine-daftar-apk
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: دریافت کد
+        uses: actions/checkout@v4
+
+      - name: نصب Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: نصب Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: کش Gradle (سرعت بیلدهای بعدی)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      # کلید امضای debug را بین اجراها نگه می‌داریم تا نسخهٔ جدید روی نسخهٔ قبلی
+      # نصب شود (وگرنه امضا هر بار عوض می‌شود و باید اپ حذف شود = پاک شدن داده).
+      - name: کش کلید امضای debug
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
+      - name: اجرایی کردن gradlew
+        run: chmod +x ./gradlew
+
+      - name: تست‌های واحد
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+        continue-on-error: true
+
+      - name: ساخت APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: آپلود APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: hazine-daftar-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: ذخیرهٔ گزارش تست‌ها
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: app/build/reports/tests/**
+          if-no-files-found: ignore
+          retention-days: 14

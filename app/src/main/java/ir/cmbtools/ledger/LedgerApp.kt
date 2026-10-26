@@ -24,7 +24,9 @@ class LedgerApp : Application() {
             // تا تطبیق با «یادداشت» کاربران پنل و پیامک بانکی دقیق باشد.
             runCatching { container.billing.normalizeStoredPhones() }
             // پیامک‌های بی‌تطبیق با قواعد تازه دوباره خوانده می‌شوند؛ پرداخت‌های ثبت‌شده دست‌نخورده می‌مانند.
-            runCatching { container.matcher.refreshUnmatchedSmsParsing() }
+            runCatching {
+                container.matcher.refreshUnmatchedSmsParsing(container.prefs.current.bankSmsAllowedSender)
+            }
         }
     }
 }

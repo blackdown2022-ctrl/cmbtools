@@ -25,6 +25,8 @@ data class AppSettings(
     /** پایهٔ ساخت لینک اشتراک اگر پنل در دسترس نباشد */
     val fallbackSubscriptionBase: String = "",
     val autoMatchBankSms: Boolean = true,
+    /** سرشمارهٔ مجاز پیامک بانکی؛ خالی یعنی هیچ پیامکی پذیرفته نشود. */
+    val bankSmsAllowedSender: String = "",
     /** مبالغ بالاتر از این مقدار بدون تأیید دستی خودکار تطبیق نشوند (ریال) */
     val autoMatchMaxRial: Long = 20_000_000,
 
@@ -206,6 +208,7 @@ class Prefs(context: Context) {
                 },
             fallbackSubscriptionBase = sp.getString("fallbackSubscriptionBase", "") ?: "",
             autoMatchBankSms = sp.getBoolean("autoMatchBankSms", true),
+            bankSmsAllowedSender = sp.getString("bankSmsAllowedSender", "") ?: "",
             autoMatchMaxRial = sp.getLong("autoMatchMaxRial", defaults.autoMatchMaxRial),
             autoSyncEnabled = sp.getBoolean("autoSyncEnabled", true),
             // پیش‌تر فاصله فقط پیش‌فرض ۵ دقیقه‌ای بود و در UI قابل تغییر نبود؛
@@ -240,6 +243,7 @@ class Prefs(context: Context) {
             .putString("invoiceTemplate", next.invoiceTemplate)
             .putString("fallbackSubscriptionBase", next.fallbackSubscriptionBase)
             .putBoolean("autoMatchBankSms", next.autoMatchBankSms)
+            .putString("bankSmsAllowedSender", next.bankSmsAllowedSender)
             .putLong("autoMatchMaxRial", next.autoMatchMaxRial)
             .putBoolean("autoSyncEnabled", next.autoSyncEnabled)
             .putInt("autoSyncMinutes", next.autoSyncMinutes)

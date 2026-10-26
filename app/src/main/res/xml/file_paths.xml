@@ -2,5 +2,4 @@
 <paths>
     <files-path name="exports" path="exports/" />
     <files-path name="backups" path="backups/" />
-    <cache-path name="cache" path="." />
 </paths>

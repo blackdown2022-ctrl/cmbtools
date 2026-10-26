@@ -17,16 +17,19 @@ android {
         // ── نسخه‌بندی ────────────────────────────────────────────────
         // برای هر آپدیت: versionCode یکی زیاد شود و versionName طبق قاعدهٔ زیر:
         //   تغییر بزرگ → 1.0.0     قابلیت جدید → 0.x.0     رفع باگ → 0.x.y
-        versionCode = 9
-        versionName = "0.4.1"
+        versionCode = 10
+        versionName = "0.5.0"
         resourceConfigurations += listOf("fa", "en")
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            isDebuggable = false
+            // برای نصب شخصی و امکان به‌روزرسانی، CI این variant غیرقابل‌دیباگ را
+            // با همان گواهی ثابتِ cacheشده امضا می‌کند. هشدار «منبع ناشناس» Android همچنان ممکن است.
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // برای استفاده شخصی: با keystore خودتان امضا کنید (بخش ۱۱ گزارش).
         }
     }
 
@@ -71,6 +74,7 @@ dependencies {
 
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
     kapt("androidx.room:room-compiler:2.6.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

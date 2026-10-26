@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -67,6 +68,7 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
 
     var showSmsPreview by remember { mutableStateOf(false) }
     var showVoid by remember { mutableStateOf(false) }
+    var showDelete by remember { mutableStateOf(false) }
 
     val customer = invoice?.let { inv -> customers.firstOrNull { it.customer.id == inv.customerId }?.customer }
 
@@ -224,6 +226,11 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
                             Text("ابطال فاکتور", color = AccentRed)
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(onClick = { showDelete = true }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.height(18.dp), tint = AccentRed)
+                        Text(" حذف کامل فاکتور", color = AccentRed)
+                    }
                 }
             } ?: Text("فاکتور پیدا نشد", color = TextMuted)
 
@@ -278,6 +285,20 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
                 showVoid = false
             },
             onDismiss = { showVoid = false }
+        )
+    }
+
+    if (showDelete) {
+        ConfirmDialog(
+            title = "حذف کامل فاکتور",
+            text = "این کار برگشت‌پذیر نیست. خود فاکتور و ردیف‌هایش حذف می‌شود. پرداخت‌های تخصیص‌یافته به اعتبار آزاد مشتری برمی‌گردد." +
+                if (invoice?.panelUserUuid?.isNotBlank() == true) " اکانت متصل در پنل هیدی‌فای هم ابتدا حذف می‌شود؛ اگر پنل در دسترس نباشد، فاکتور محلی حذف نخواهد شد." else "",
+            confirmText = "حذف فاکتور",
+            onConfirm = {
+                vm.deleteInvoice(invoiceId) { nav.popBackStack() }
+                showDelete = false
+            },
+            onDismiss = { showDelete = false }
         )
     }
 }

@@ -6,9 +6,10 @@
 
     <!-- خواندن زندهٔ پیامک بانکی (نصب مستقیم، استفادهٔ شخصی) -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <uses-permission android:name="android.permission.READ_SMS" />
     <!-- ارسال فاکتور از سیم‌کارت (گزینهٔ جایگزین درگاه) -->
     <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- SMS قابلیت اختیاری است؛ نصب روی تبلت/Chromebook بدون مودم مخابراتی هم مجاز بماند. -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

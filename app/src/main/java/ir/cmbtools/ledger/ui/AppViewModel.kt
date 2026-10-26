@@ -2,6 +2,7 @@ package ir.cmbtools.ledger.ui
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.room.withTransaction
 import androidx.lifecycle.viewModelScope
 import ir.cmbtools.ledger.AppContainer
 import ir.cmbtools.ledger.LedgerApp
@@ -441,6 +442,27 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         runCatching { c.invoices.void(id) }
             .onSuccess { success("فاکتور ابطال شد") }
             .onFailure { failure(it.message ?: "خطا") }
+    }
+
+    /** حذف فاکتور؛ اکانت متصل در پنل اول حذف می‌شود، سپس داده‌های محلی اتمیک پاک می‌شوند. */
+    fun deleteInvoice(id: Long, onDeleted: () -> Unit = {}) = viewModelScope.launch {
+        _busy.value = true
+        try {
+            val invoice = c.invoices.get(id) ?: error("فاکتور پیدا نشد")
+            if (invoice.panelUserUuid.isNotBlank()) {
+                c.panelService.deletePanelAccount(invoice.panelUserUuid)
+            }
+            c.db.withTransaction {
+                c.invoices.delete(id)
+                if (invoice.panelUserUuid.isNotBlank()) c.panelDao2().deleteAccount(invoice.panelUserUuid)
+            }
+            success("فاکتور حذف شد" + if (invoice.panelUserUuid.isNotBlank()) " و اکانت پنل هم همان لحظه حذف شد" else "")
+            onDeleted()
+        } catch (e: Exception) {
+            failure(e.message ?: "حذف فاکتور ناموفق بود؛ چیزی از سوابق محلی پاک نشد")
+        } finally {
+            _busy.value = false
+        }
     }
 
     // ---------------------------------------------------------------- پرداخت

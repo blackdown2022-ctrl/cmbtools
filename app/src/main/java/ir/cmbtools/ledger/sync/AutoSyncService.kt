@@ -105,14 +105,21 @@ object AutoSyncController {
     }
 
     fun start(context: Context) {
-        val intent = Intent(context, AutoSyncService::class.java)
-        runCatching {
-            ContextCompat.startForegroundService(context.applicationContext, intent)
+        val ctx = context.applicationContext
+        val app = ctx as? LedgerApp ?: return
+        if (!app.container.prefs.current.autoSyncEnabled) {
+            stop(ctx)
+            return
         }
+        // Periodic WorkManager is a persisted fallback if the OS kills the long-running service.
+        runCatching { PanelSyncWorker.schedule(ctx) }
+        val intent = Intent(ctx, AutoSyncService::class.java)
+        runCatching { ContextCompat.startForegroundService(ctx, intent) }
     }
 
     fun stop(context: Context) {
         val ctx = context.applicationContext
+        runCatching { PanelSyncWorker.cancel(ctx) }
         runCatching { ctx.stopService(Intent(ctx, AutoSyncService::class.java)) }
     }
 }

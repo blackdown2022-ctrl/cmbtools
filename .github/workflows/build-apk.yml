@@ -71,9 +71,8 @@ jobs:
           key: gradle-v2-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts') }}
           restore-keys: gradle-v2-${{ runner.os }}-
 
-      # کلید امضای debug را بین اجراها نگه می‌داریم تا نسخهٔ جدید روی نسخهٔ قبلی
-      # نصب شود (وگرنه امضا هر بار عوض می‌شود و باید اپ حذف شود = پاک شدن داده).
-      - name: کش کلید امضای debug
+      # گواهی ثابت نگه داشته می‌شود تا APK غیرقابل‌دیباگ نسخهٔ جدید روی قبلی نصب شود.
+      - name: کش گواهی ثابت امضای APK
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
@@ -108,14 +107,38 @@ jobs:
         id: apk
         run: |
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+
+      - name: بررسی ایمنی برنامه (Lint)
+        id: lint
+        run: |
+          set -o pipefail
+          ./gradlew lintRelease --no-daemon --stacktrace 2>&1 | tee lint.log
+
+      - name: بررسی امضا و نصب‌پذیری APK
+        id: verify
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          APKSIGNER="$SDK/build-tools/34.0.0/apksigner"
+          AAPT="$SDK/build-tools/34.0.0/aapt"
+          test -s "$APK"
+          "$SDK/build-tools/34.0.0/zipalign" -c -v 4 "$APK"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          BADGING=$("$AAPT" dump badging "$APK")
+          echo "$BADGING" | grep -E "^package: name='ir.cmbtools.ledger'|^sdkVersion:|^targetSdkVersion:"
+          if echo "$BADGING" | grep -q '^application-debuggable'; then
+            echo "Refusing to publish a debuggable APK" >&2
+            exit 1
+          fi
 
       - name: آپلود APK
         if: steps.apk.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: tiznet-apk-${{ steps.ver.outputs.name }}
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 90
 
@@ -154,7 +177,7 @@ jobs:
         run: |
           VERSION="${{ steps.ver.outputs.name }}"
           CODE="${{ steps.ver.outputs.code }}"
-          cp app/build/outputs/apk/debug/app-debug.apk "tiznet-${VERSION}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "tiznet-${VERSION}.apk"
           gh release create "v${VERSION}-${GITHUB_RUN_NUMBER}" \
             "tiznet-${VERSION}.apk" \
             --title "تیزنت نسخهٔ ${VERSION} (کد ${CODE} — ساخت ${GITHUB_RUN_NUMBER})" \
@@ -171,6 +194,8 @@ jobs:
           path: |
             app/build/reports/tests/**
             test.log
+            build.log
+            lint.log
           if-no-files-found: ignore
           retention-days: 14
 
@@ -189,14 +214,14 @@ jobs:
             grep -E '^e: ' build.log test.log 2>/dev/null | head -80 || echo "(هیچ)"
             echo '```'
             echo ""
-            echo "#### خطاهای Gradle / Android (\`error:\`)"
+            echo "#### خطاهای Gradle / Android / Lint"
             echo '```'
-            grep -E 'error:|Error:|Could not|Unresolved|Caused by' build.log 2>/dev/null | head -40 || echo "(هیچ)"
+            grep -Ei 'error:|Error:|Could not|Unresolved|Caused by|fatal|^.*\berror\b' build.log lint.log 2>/dev/null | head -60 || echo "(هیچ)"
             echo '```'
             echo ""
             echo "#### بخش «What went wrong»"
             echo '```'
-            grep -A 25 -E 'What went wrong|FAILURE: Build failed' build.log 2>/dev/null | head -70 || echo "(هیچ)"
+            grep -A 25 -E 'What went wrong|FAILURE: Build failed' build.log lint.log 2>/dev/null | head -90 || echo "(هیچ)"
             echo '```'
             echo ""
             echo "#### دسترسی مخازن"

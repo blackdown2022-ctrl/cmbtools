@@ -33,9 +33,10 @@ class AppContainer(context: Context) {
     private val panelDao = db.panel()
     private val bankSmsDao = db.bankSms()
     private val outboxDao = db.smsOutbox()
+    private val invoiceNumberCounterDao = db.invoiceNumberCounter()
 
     val customers = CustomerRepository(customersDao, ledgerDao, invoicesDao)
-    val invoices = InvoiceRepository(invoicesDao, ledgerDao, paymentsDao)
+    val invoices = InvoiceRepository(invoicesDao, ledgerDao, paymentsDao, invoiceNumberCounterDao)
     val payments = PaymentRepository(paymentsDao, invoicesDao, invoices, ledgerDao)
     val reports = ReportingRepository(invoicesDao, paymentsDao, expensesDao, ledgerDao, customersDao, panelDao, bankSmsDao)
 

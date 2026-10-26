@@ -109,10 +109,24 @@ class ExportManager(
         }
     }
 
+    /** Write the backup directly to a user-selected document (Downloads or another folder). */
+    fun saveBackup(uri: Uri, onResult: (Result<Uri>) -> Unit = {}) {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            val result = runCatching {
+                val file = buildBackupFile()
+                val output = context.contentResolver.openOutputStream(uri, "wt")
+                    ?: error("فایل مقصد برای نوشتن باز نشد")
+                output.use { destination -> file.inputStream().use { source -> source.copyTo(destination) } }
+                uri
+            }
+            withContext(Dispatchers.Main) { onResult(result) }
+        }
+    }
+
     private suspend fun buildBackupFile(): File {
         val dao = container.backupDao()
         val payload = BackupPayload(
-            version = 2,
+            version = 3,
             appVersion = ir.cmbtools.ledger.BuildConfig.VERSION_NAME,
             customers = dao.allCustomers(),
             plans = dao.allPlans(),
@@ -127,7 +141,11 @@ class ExportManager(
             panelAccounts = dao.allPanelAccounts(),
             bankSms = dao.allBankSms(),
             smsOutbox = dao.allOutbox(),
-            settings = container.prefs.current
+            settings = container.prefs.current,
+            invoiceNumberHighWatermark = maxOf(
+                container.db.invoiceNumberCounter().lastNumber() ?: 0L,
+                container.db.invoiceNumberCounter().maximumInvoiceNumber()
+            )
         )
         val file = File(exportsDir(), "backup_${stamp()}.json")
         file.writeText(json.encodeToString(BackupPayload.serializer(), payload))
@@ -141,6 +159,7 @@ class ExportManager(
             val payload = json.decodeFromString(BackupPayload.serializer(), text)
             container.db.withTransaction {
                 container.backupDao().replaceAll(payload)
+                container.db.invoiceNumberCounter().ensureAtLeast(payload.invoiceNumberHighWatermark)
             }
             // تنظیمات برنامه (پیامک/فاکتور/همگام‌سازی/قفل/...) هم بازیابی می‌شوند
             payload.settings?.let { saved ->

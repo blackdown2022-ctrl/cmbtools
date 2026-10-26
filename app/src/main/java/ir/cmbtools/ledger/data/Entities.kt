@@ -41,7 +41,7 @@ data class Plan(
 @Serializable
 data class Invoice(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    /** شمارهٔ یکتا مثل 1405-0001 */
+    /** شمارهٔ یکتا به صورت عدد صحیح مثبت؛ از ۱ شروع می‌شود */
     val number: String,
     val customerId: Long,
     val issuedAtEpochDay: Long,

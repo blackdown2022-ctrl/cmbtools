@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import ir.cmbtools.ledger.core.InvoiceNumbering
 
 /**
  * خواندن/نوشتن کل جداول برای پشتیبان‌گیری JSON.
@@ -73,11 +74,18 @@ interface BackupDao {
         clearOutbox()
         putCustomers(payload.customers)
         putPlans(payload.plans)
-        putInvoices(payload.invoices)
+        val assignments = InvoiceNumbering.assignSequentially(
+            payload.invoices.map { InvoiceNumbering.InvoiceRef(it.id, it.issuedAtEpochDay) }
+        ).associate { it.id to it.number }
+        putInvoices(payload.invoices.map { invoice -> invoice.copy(number = assignments[invoice.id] ?: invoice.number) })
         putLines(payload.lines)
         putPayments(payload.payments)
         putAllocations(payload.allocations)
-        putLedger(payload.ledger)
+        putLedger(payload.ledger.map { entry ->
+            val number = assignments[entry.refId]
+            if (number == null || entry.refType !in setOf("INVOICE", "INVOICE_VOID")) entry
+            else entry.copy(memo = if (entry.refType == "INVOICE_VOID") "ابطال فاکتور $number" else "فاکتور $number")
+        })
         putExpenses(payload.expenses)
         putPanelAccounts(payload.panelAccounts)
         putBankSms(payload.bankSms)

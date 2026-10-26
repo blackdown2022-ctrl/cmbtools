@@ -6,20 +6,17 @@ import kotlinx.serialization.Serializable
 /**
  * ساختار فایل پشتیبان JSON.
  *
- * نسخهٔ ۲ (این نسخه) نسبت به ۱ این‌ها را اضافه کرده است:
- *  • `settings`  → همهٔ تنظیمات برنامه (پیامک، قالب فاکتور، نام کسب‌وکار، کارت،
- *    همگام‌سازی خودکار، قیمت هر گیگ، قفل، ...)
- *  • `panelConfig` → تنظیمات اتصال پنل هیدی‌فای (دامنه، مسیر پروکسی، کلید API، نسخه)
- *  • `smsOutbox` → تاریخچهٔ پیامک‌های ارسالی
+ * نسخهٔ ۳ این موارد را هم اضافه می‌کند:
+ *  • تنظیمات برنامه و پنل + پیامک‌های ارسالی (از نسخهٔ ۲)
+ *  • `invoiceNumberHighWatermark` → جلوگیری از استفادهٔ دوباره از شماره پس از حذف/بازیابی
  *
- * همهٔ فیلدهای جدید مقدار پیش‌فرض دارند، پس فایل پشتیبان نسخهٔ ۱ هم بدون خطا
- * بازیابی می‌شود (فقط تنظیماتش خالی است).
+ * فیلدهای افزوده مقدار پیش‌فرض دارند، پس فایل‌های پشتیبان قدیمی هم قابل بازیابی‌اند.
  */
 @Serializable
 data class BackupPayload(
-    val version: Int = 2,
+    val version: Int = 3,
     val createdAt: Long = System.currentTimeMillis(),
-    val appVersion: String = "0.4.0",
+    val appVersion: String = "0.5.0",
     val customers: List<Customer> = emptyList(),
     val plans: List<Plan> = emptyList(),
     val invoices: List<Invoice> = emptyList(),
@@ -33,7 +30,9 @@ data class BackupPayload(
     val bankSms: List<BankSms> = emptyList(),
     val smsOutbox: List<SmsOutbox> = emptyList(),
     /** همهٔ تنظیمات برنامه (پیامک، فاکتور، همگام‌سازی، ...) */
-    val settings: AppSettings? = null
+    val settings: AppSettings? = null,
+    /** آخرین شمارهٔ مصرف‌شده؛ با حذف فاکتور هم از تکرار شماره جلوگیری می‌کند. */
+    val invoiceNumberHighWatermark: Long = 0
 ) {
     val customersCountText: Int get() = customers.size
 }

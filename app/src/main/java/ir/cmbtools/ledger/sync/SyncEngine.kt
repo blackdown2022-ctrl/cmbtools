@@ -3,6 +3,7 @@ package ir.cmbtools.ledger.sync
 import ir.cmbtools.ledger.billing.AutoBilling
 import ir.cmbtools.ledger.core.Money
 import ir.cmbtools.ledger.core.PanelSyncRules
+import ir.cmbtools.ledger.core.PanelCustomerNames
 import ir.cmbtools.ledger.core.Prefs
 import ir.cmbtools.ledger.data.CustomerDao
 import ir.cmbtools.ledger.data.PanelAccount
@@ -102,8 +103,14 @@ class SyncEngine(
 
         for (u in users) {
             val old = known[u.uuid]
-            var customerId = old?.customerId ?: 0L
-            if (customerId <= 0) customerId = resolveCustomerId(u.comment, u.name)
+            val resolvedCustomerId = resolveCustomerId(u.comment, u.name)
+            val ambiguousName = resolvedCustomerId <= 0 && billing.exactNameMatches(u.name).size > 1
+            var customerId = PanelCustomerNames.chooseCustomerId(
+                resolvedId = resolvedCustomerId,
+                previousId = old?.customerId ?: 0L,
+                ambiguousName = ambiguousName
+            )
+            if (ambiguousName) problems += "${u.name}: چند مشتری با این نام وجود دارد؛ برای جلوگیری از صدور فاکتور اشتباه، اتصال انجام نشد. شمارهٔ مشتری را در یادداشت پنل وارد کنید."
 
             // کاربر پنل که مشتری محلی ندارد: اگر «ساخت خودکار مشتری» روشن باشد، همین‌جا
             // ساخته می‌شود — حتی وقتی فاکتور خودکار خاموش است. قبلاً فقط داخل مسیر
@@ -156,7 +163,7 @@ class SyncEngine(
                     // ۱) مشتری: پیش‌تر در همین دور حل/ساخته شده است
                     if (customerId <= 0) {
                         skipped++
-                        problems += "${u.name}: مشتری متناظر پیدا نشد"
+                        if (!ambiguousName) problems += "${u.name}: مشتری متناظر پیدا نشد"
                     } else {
                         // ۲) قیمت: بستهٔ تعریف‌شده یا قیمت هر گیگ
                         val priced = runCatching { billing.priceFor(u.usageLimitGb, u.packageDays) }.getOrNull()
@@ -254,19 +261,8 @@ class SyncEngine(
     }
 
     /**
-     * اتصال کاربر پنل به مشتری محلی، به ترتیب:
-     * ۱) کامنتی که خود این اپ نوشته: cmbtools:<customerId>:<name>
-     * ۲) نام دقیق مشتری
-     * ۳) شمارهٔ موبایل داخل نام/کامنت
-     * ۴) اولین کلمهٔ نام
-     */
-    /**
-     * اتصال کاربر پنل به مشتری محلی، به ترتیب اولویت:
-     *  ۱) کامنت خودکار `cmbtools:<id>` (اگر اکانت را خود اپ ساخته باشد)
-     *  ۲) **شمارهٔ موبایل داخل یادداشت/کامنت پنل** ← کاربر شمارهٔ مشتری را همان‌جا می‌نویسد
-     *  ۳) نام دقیق مشتری
-     *  ۴) شمارهٔ موبایل داخل نام کاربر پنل
-     *  ۵) اولین کلمهٔ نام
+     * اتصال امن کاربر پنل: شناسهٔ اپ، شمارهٔ یادداشت، نام کامل دقیق، سپس شمارهٔ داخل نام.
+     * تطبیق نام کوچک/پیشوند عمداً انجام نمی‌شود تا «رضا» با «رضا عباسی» یکی نشود.
      */
     suspend fun resolveCustomerId(comment: String?, name: String): Long {
         val idFromComment = billing.customerIdFromComment(comment)
@@ -277,13 +273,11 @@ class SyncEngine(
             billing.findCustomerByPhone(phoneFromComment)?.let { return it.id }
         }
 
-        customerDao.byName(name.trim())?.let { return it.id }
+        val exactIds = billing.exactNameMatches(name)
+        if (exactIds.size == 1) return exactIds.single()
 
         val phoneFromName = billing.extractPhone(name)
         if (phoneFromName.isNotBlank()) billing.findCustomerByPhone(phoneFromName)?.let { return it.id }
-
-        val firstToken = name.trim().substringBefore(" ").trim()
-        if (firstToken.length >= 3) customerDao.byName(firstToken)?.let { return it.id }
         return 0
     }
 

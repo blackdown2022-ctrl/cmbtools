@@ -804,3 +804,61 @@ class BackupPayloadTest {
         assertEquals(1, back.version) // همان نسخه‌ای که در فایل نوشته شده
     }
 }
+
+class PanelCustomerNamesTest {
+    @Test
+    fun first_name_never_matches_a_longer_customer_name() {
+        val ids = ir.cmbtools.ledger.core.PanelCustomerNames.exactMatchIds(
+            "رضا عباسی",
+            listOf(1L to "رضا", 2L to "رضا عباسی")
+        )
+        assertEquals(listOf(2L), ids)
+    }
+
+    @Test
+    fun normalizes_arabic_letters_extra_spaces_and_zwnj_but_keeps_full_name_distinct() {
+        val ids = ir.cmbtools.ledger.core.PanelCustomerNames.exactMatchIds(
+            "رضا   عباسي",
+            listOf(1L to "رضا", 2L to "رضا\u200c عباسی")
+        )
+        assertEquals(listOf(2L), ids)
+    }
+
+    @Test
+    fun removes_legacy_invoice_and_plan_suffix_before_exact_match() {
+        val ids = ir.cmbtools.ledger.core.PanelCustomerNames.exactMatchIds(
+            "رضا عباسی 1405-0041 - بستهٔ یک‌ماهه ۳۰ گیگ",
+            listOf(2L to "رضا عباسی")
+        )
+        assertEquals(listOf(2L), ids)
+        assertEquals("رضا-عباسی", ir.cmbtools.ledger.core.PanelCustomerNames.cleanLegacyPanelName("رضا-عباسی"))
+    }
+
+    @Test
+    fun duplicate_full_names_are_reported_as_ambiguous_not_silently_selected() {
+        val ids = ir.cmbtools.ledger.core.PanelCustomerNames.exactMatchIds(
+            "رضا عباسی",
+            listOf(2L to "رضا عباسی", 3L to "رضا  عباسی")
+        )
+        assertEquals(listOf(2L, 3L), ids)
+    }
+
+    @Test
+    fun reliable_full_name_repairs_an_old_wrong_link_and_ambiguous_name_disables_old_link() {
+        val matcher = ir.cmbtools.ledger.core.PanelCustomerNames
+        assertEquals(2L, matcher.chooseCustomerId(resolvedId = 2, previousId = 1, ambiguousName = false))
+        assertEquals(0L, matcher.chooseCustomerId(resolvedId = 0, previousId = 1, ambiguousName = true))
+        assertEquals(1L, matcher.chooseCustomerId(resolvedId = 0, previousId = 1, ambiguousName = false))
+    }
+
+    @Test
+    fun app_link_id_is_read_after_customer_phone_without_reading_id_as_phone() {
+        val comment = "09121234567 | cmbtools:42"
+        assertEquals(42L, ir.cmbtools.ledger.core.PanelCustomerNames.customerIdFromComment(comment))
+        assertEquals(
+            "09121234567",
+            Phone.extract(ir.cmbtools.ledger.core.PanelCustomerNames.commentBeforeLink(comment))
+        )
+        assertEquals(42L, ir.cmbtools.ledger.core.PanelCustomerNames.customerIdFromComment("cmbtools:42:رضا"))
+    }
+}

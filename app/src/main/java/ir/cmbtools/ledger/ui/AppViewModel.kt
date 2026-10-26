@@ -314,13 +314,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     result = result.copy(ok = true, message = "فاکتور صادر شد؛ اکانت پنل ساخته نشد (اتصال پنل تنظیم نشده)")
                 } else {
                     try {
-                        val invoice = c.invoices.get(invoiceId)
                         val provision = c.panelService.createAccount(
                             customerId = customerId,
-                            planName = planName,
                             gb = gb,
-                            days = days,
-                            invoiceNumber = invoice?.number ?: ""
+                            days = days
                         )
                         c.invoices.setPanelInfo(invoiceId, provision.uuid, 1, provision.subscriptionUrl)
                         result = result.copy(
@@ -361,10 +358,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val invoice = c.invoices.get(invoiceId) ?: error("فاکتور پیدا نشد")
             val provision = c.panelService.createAccount(
                 customerId = invoice.customerId,
-                planName = invoice.note,
                 gb = gb,
-                days = days,
-                invoiceNumber = invoice.number
+                days = days
             )
             c.invoices.setPanelInfo(invoiceId, provision.uuid, 1, provision.subscriptionUrl)
             success("اکانت ساخته شد")

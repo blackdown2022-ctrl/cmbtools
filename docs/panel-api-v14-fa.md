@@ -4,12 +4,13 @@
 مسیر فایل‌های مرجع در مخزن `hiddify/HiddifyPanel`:
 
 ```
-hiddifypanel/panel/commercial/restapi/v2/admin/__init__.py     ← همهٔ مسیرها
+hiddifypanel/panel/commercial/restapi/v2/admin/__init__.py     ← همهٔ مسیرهای ادمین
 hiddifypanel/panel/commercial/restapi/v2/admin/users_page_api.py
-hiddifypanel/panel/commercial/restapi/v2/admin/users_api.py
-hiddifypanel/panel/commercial/restapi/v2/admin/schema.py
+hiddifypanel/panel/commercial/restapi/v2/admin/admins_api.py   ← _link_domains
 hiddifypanel/panel/commercial/restapi/v2/panel/info.py
-hiddifypanel/auth.py                                            ← هدر Hiddify-API-Key
+hiddifypanel/auth.py                                           ← هدر Hiddify-API-Key
+hiddifypanel/hutils/flask.py                                   ← اعتبارسنجی مسیر پروکسی
+hiddifypanel/models/config_enum.py                             ← proxy_path_admin / proxy_path_client
 ```
 
 ---
@@ -112,3 +113,95 @@ if body.get("reset_usage"): user.reset_usage()          # مصرف صفر
 | «دسترسی رد شد» | کلید API = UUID ادمین نیست، یا ادمین سطح دسترسی ندارد | از صفحهٔ ادمین‌ها UUID را کپی کنید |
 | «سقف کاربران پر است» | `can_add = false` | در پنل سقف کاربران/ترافیک ادمین را زیاد کنید |
 | کاربر ساخته می‌شود ولی در اپ نیست | همگام‌سازی خودکار خاموش است | تنظیمات → همگام‌سازی خودکار → روشن |
+
+---
+
+## ۵) بازطراحی ۰.۳.۱ — سه آدرسِ متفاوت، سه فیلد جدا
+
+این بخش علت واقعی «ساخت کاربر هنوز کار نمی‌کند» در نسخهٔ ۰.۳.۰ است و بر اساس کد خودِ
+هیدی‌فای ۱۴ نوشته شده (نه حدس).
+
+### ۵-۱) هیدی‌فای ۱۴ سه «مسیر» جدا دارد
+
+در `hiddifypanel/models/config_enum.py` و `hiddifypanel/hutils/flask.py`:
+
+| کلید تنظیمات | چه چیزی با آن ساخته می‌شود |
+|---|---|
+| `proxy_path_admin` | آدرس پنل ادمین و **همهٔ** درخواست‌های `/api/v2/admin/...` |
+| `proxy_path` | مسیر قدیمی (سازگاری عقب‌رو) |
+| `proxy_path_client` | پنل کاربر و **پایهٔ لینک اشتراک** |
+
+و اعتبارسنجی مسیر در `proxy_path_validator`:
+
+```python
+if is_api_call(request.path):
+    if __is_admin_api_call() and proxy_path != admin_proxy_path:
+        abort(400, "invalid request")          # ← مسیر اشتراک برای API ادمین کار نمی‌کند
+    if is_user_api_call() and proxy_path != client_proxy_path:
+        abort(400, "invalid request")
+```
+
+یعنی **درخواست API ادمین فقط و فقط با `proxy_path_admin` پذیرفته می‌شود**، و
+**لینک اشتراک مشتری با `proxy_path_client` ساخته می‌شود**. این دو در بسیاری از نصب‌ها
+متفاوت‌اند. (منبعِ پایهٔ لینک: `_link_domains(ConfigEnum.proxy_path_client)` در
+`restapi/v2/admin/admins_api.py` → `https://<domain>/<proxy_path_client>/`، و در فرانت
+`LinkShareDialog.vue`: `link = domain.base + "<uuid>/"`.)
+
+### ۵-۲) چهار دلیل که «ساخت کاربر» شکست می‌خورد
+
+۱. **`/admin/` در آدرس مرورگر.** کاربر آدرس پنل را از نوار آدرس کپی می‌کند:
+   `https://panel.example.com/AbCdEf12/admin/`. نسخهٔ ۰.۳.۰ فقط `/api/...` را از مسیر
+   حذف می‌کرد، نه `/admin` را؛ در نتیجه مسیر پروکسی `AbCdEf12/admin` ذخیره می‌شد و
+   Retrofit اسلش را `%2F` می‌کند → **همهٔ درخواست‌ها ۴۰۴**.
+   بدتر اینکه ۴۰۴ فهرست کاربران در کد قبلی «فهرست خالی» تفسیر می‌شد؛ پس اپ می‌گفت
+   «متصل، ۰ کاربر» و کاربر فکر می‌کرد اتصال درست است.
+۲. **کلید/مسیر اشتباه = صفحهٔ HTML، نه ۴۰۱.** `auth_before_request()` برای کلید نامعتبر
+   `logout_redirect()` می‌دهد (صفحهٔ ورود). پارسر قبلی این HTML را «پاسخ نامعتبر» می‌دید یا
+   فهرست خالی برمی‌گرداند؛ بنابراین خطای واقعی («کلید یا مسیر غلط است») هرگز نمایش داده نمی‌شد.
+۳. **تأیید نکردن پس از POST.** پنل بعد از هر ساخت/ویرایش `quick_apply_users()` را اجرا
+   می‌کند؛ اگر پاسخ از تایم‌اوت بگذرد، OkHttp درخواست را تکرار می‌کند و بار دوم با
+   `400 A user with this UUID exists` رد می‌شود — در حالی که **کاربر ساخته شده است**.
+   نسخهٔ ۰.۳.۰ همین را «ساخت اکانت ناموفق» نشان می‌داد.
+۴. **پایهٔ لینک اشتراک فیلد نداشت.** مقدار آن فقط از `link_domains` می‌آمد و اگر آن خالی
+   بود، به `fallbackSubscriptionBase` برمی‌گشت که جایش در کارت **پیامک** بود — یعنی از
+   «تنظیمات پنل» جدا. نتیجه: اکانت ساخته می‌شد ولی لینک خالی می‌ماند (و در پیامک/فاکتور
+   دیده نمی‌شد).
+
+### ۵-۳) فیلدهای جدید تنظیمات (سه فیلد مستقل)
+
+| فیلد در اپ | نمونه | کاربرد |
+|---|---|---|
+| ۱) آدرس پنل (همان آدرس مرورگر) | `https://panel.example.com/AbCdEf12` | مسیر ادمین از آن استخراج می‌شود |
+| ۲) کلید API (UUID ادمین) | `8f14e45f-…` | هدر `Hiddify-API-Key` |
+| ۳) پایهٔ لینک اشتراک (اختیاری) | `https://sub.example.com/x7Yz12/` | لینک مشتری؛ خالی = خودکار از پنل |
+
+آدرس‌هایی که اپ می‌سازد (و در همان کارت تنظیمات، زیر «آدرس‌های دقیق» نشان داده می‌شوند):
+
+```
+پایهٔ API              https://panel.example.com/AbCdEf12/api/v2/
+ساخت کاربر (POST)      https://panel.example.com/AbCdEf12/api/v2/admin/users/
+ویرایش/حذف کاربر        https://panel.example.com/AbCdEf12/api/v2/admin/users/<uuid>/
+لینک مشتری             https://sub.example.com/x7Yz12/<uuid>/
+```
+
+### ۵-۴) سخت‌سازی‌های این نسخه
+
+- **تجزیهٔ کامل آدرس:** پشتیبانی از `…/admin/`، `…/admin/#/users`، `?query`، لینک کامل API،
+  آدرس بدون `https://` و آدرس با پورت.
+- **تشخیص HTML/ریدایرکت:** اگر پاسخ پنل به‌جای JSON صفحهٔ ورود بود، پیام صریح
+  «کلید API یا مسیر پروکسی ادمین درست نیست» نمایش داده می‌شود.
+- **تأیید پس از ساخت:** UUID از قبل ساخته می‌شود؛ اگر پاسخ خطا/تایم‌اوت بود، وجود کاربر در
+  فهرست بررسی می‌شود و پیام «A user with this UUID exists» به‌عنوان موفقیت پذیرفته می‌شود.
+- **تایم‌اوت واقع‌گرایانه:** ۱۲۰ ثانیه خواندن / ۱۸۰ ثانیه کل درخواست، چون پنل پس از هر
+  تغییر کانفیگ‌ها را دوباره می‌سازد.
+- **دکمهٔ «تست ساخت کاربر»:** یک کاربر موقت (`cmbtools-test-…`) می‌سازد و پاک می‌کند؛
+  اگر سبز شد، ساخت واقعی هم قطعاً کار می‌کند.
+- **گزارش قابل‌کپی:** همهٔ بررسی‌ها + آدرس‌های دقیق + آخرین پاسخ خام پنل (بدون کلید کامل).
+- **مهاجرت پایگاه‌داده:** `panel_configs.subscriptionBase` (نسخهٔ ۳، `MIGRATION_2_3`).
+
+| نشانه | علت | راه‌حل (۰.۳.۱) |
+|-------|-----|----------------|
+| متصل است ولی «۰ کاربر» | مسیر شامل `/admin` یا مسیر اشتراک بود | آدرس پنل را کامل از مرورگر بچسبانید؛ نسخهٔ جدید `/admin` و `#` را خودکار حذف می‌کند |
+| `400 invalid request` | مسیر اشتراک (`proxy_path_client`) به‌جای مسیر ادمین | عیب‌یابی همین را می‌گوید؛ آدرس ادمین (وقتی با حساب ادمین وارد شده‌اید) را کپی کنید |
+| صفحهٔ ورود به‌جای JSON | کلید API ادمین نیست | UUID ادمین را از صفحهٔ «ادمین‌ها» بردارید |
+| «کاربر ساخته شد» ولی خطا دیدید | تایم‌اوت `quick_apply_users` | نسخهٔ جدید پس از خطا وجود کاربر را بررسی می‌کند |

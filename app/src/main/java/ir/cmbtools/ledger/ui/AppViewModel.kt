@@ -86,6 +86,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _panelChecks = MutableStateFlow<List<ir.cmbtools.ledger.panel.PanelCheck>>(emptyList())
     val panelChecks: StateFlow<List<ir.cmbtools.ledger.panel.PanelCheck>> = _panelChecks.asStateFlow()
 
+    /** آدرس‌های دقیق پنل که اپ استفاده می‌کند (برای نمایش در تنظیمات) */
+    private val _panelEndpoints = MutableStateFlow(ir.cmbtools.ledger.panel.PanelEndpoints())
+    val panelEndpoints: StateFlow<ir.cmbtools.ledger.panel.PanelEndpoints> = _panelEndpoints.asStateFlow()
+
+    /** گزارش متنی عیب‌یابی، آمادهٔ کپی/ارسال */
+    private val _panelReport = MutableStateFlow("")
+    val panelReport: StateFlow<String> = _panelReport.asStateFlow()
+
     /** پیشرفت کارهای طولانی (همگام‌سازی/ساخت کاربر) برای نمایش متن مرحله */
     private val _busyText = MutableStateFlow("")
     val busyText: StateFlow<String> = _busyText.asStateFlow()
@@ -321,7 +329,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     } catch (e: PanelException) {
                         result = result.copy(
-                            message = "فاکتور صادر شد، اما ساخت اکانت ناموفق بود: ${e.message}. می‌توانید از صفحهٔ فاکتور دوباره تلاش کنید."
+                            message = "فاکتور صادر شد، اما ساخت اکانت ناموفق بود: ${e.message}. " +
+                                "از تنظیمات، «تست ساخت کاربر» را بزنید تا علت دقیق معلوم شود."
+                        )
+                    } catch (e: Exception) {
+                        result = result.copy(
+                            message = "فاکتور صادر شد، اما ساخت اکانت ناموفق بود: ${e.message ?: "خطای نامشخص"}"
                         )
                     }
                 }
@@ -407,8 +420,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     message = "تمدید انجام شد (${provision.expireInDays} روز باقی‌مانده)",
                     subscriptionUrl = provision.subscriptionUrl
                 )
-            } catch (e: PanelException) {
-                result = result.copy(message = "فاکتور صادر شد، اما تمدید پنل ناموفق بود: ${e.message}")
+            } catch (e: Exception) {
+                result = result.copy(message = "فاکتور صادر شد، اما تمدید پنل ناموفق بود: ${e.message ?: "خطای نامشخص"}")
             }
             if (sendSms) {
                 val smsResult = sendInvoiceSmsInternal(invoiceId)
@@ -519,14 +532,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---------------------------------------------------------------- پنل
 
-    fun savePanelConfig(host: String, path: String, apiKey: String, https: Boolean, name: String, onDone: () -> Unit = {}) =
+    /**
+     * ذخیرهٔ اتصال پنل از سه فیلد مستقل:
+     *  آدرس کامل پنل (همان آدرس مرورگر)، کلید API، و پایهٔ لینک اشتراک.
+     */
+    fun savePanelConfig(panelUrl: String, apiKey: String, subscriptionBase: String, name: String, onDone: () -> Unit = {}) =
         viewModelScope.launch {
             runCatching {
-                if (host.isBlank()) error("دامنهٔ پنل را وارد کنید")
-                if (path.isBlank()) error("مسیر پروکسی ادمین را وارد کنید")
+                if (panelUrl.isBlank()) error("آدرس پنل را وارد کنید (همان آدرسی که در مرورگر باز می‌شود)")
                 if (apiKey.isBlank()) error("کلید API (UUID ادمین) را وارد کنید")
-                c.panelService.saveConfig(host, path, apiKey, https, name.ifBlank { "پنل اصلی" })
+                // اول اعتبارسنجی، بعد ذخیره — تا تنظیم ناقص در پایگاه‌داده نماند
+                val parts = ir.cmbtools.ledger.panel.PanelUrl.normalize(panelUrl, "")
+                if (parts.host.isBlank()) error("آدرس پنل معتبر نیست؛ مثل https://panel.example.com/AbCdEf12")
+                if (parts.proxyPath.isBlank()) {
+                    error("در آدرس پنل، مسیر پروکسی ادمین پیدا نشد. آدرس را کامل بچسبانید؛ مثل https://panel.example.com/AbCdEf12")
+                }
+                if (apiKey.trim().length < 8) error("کلید API کوتاه است؛ UUID کامل ادمین را کپی کنید")
+                c.panelService.saveConfig(panelUrl, apiKey, subscriptionBase, name.ifBlank { "پنل اصلی" })
             }.onSuccess {
+                refreshPanelEndpoints()
                 success("تنظیمات پنل ذخیره شد")
                 // پنل تازه تنظیم شد → همگام‌سازی خودکار را راه بینداز
                 runCatching { AutoSyncController.start(getApplication<Application>()) }
@@ -534,17 +558,52 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }.onFailure { failure(it.message ?: "خطا") }
         }
 
+    /** آدرس‌های دقیق (API، ساخت کاربر، لینک اشتراک) را برای نمایش تازه می‌کند */
+    fun refreshPanelEndpoints() = viewModelScope.launch {
+        _panelEndpoints.value = runCatching { c.panelService.endpoints() }
+            .getOrDefault(ir.cmbtools.ledger.panel.PanelEndpoints())
+    }
+
+    /**
+     * آزمون واقعی «ساخت کاربر»: یک کاربر موقت در پنل ساخته و پاک می‌شود.
+     * اگر این تست سبز باشد، ساختِ واقعی هم قطعاً کار می‌کند.
+     */
+    fun probePanelCreate() = viewModelScope.launch {
+        _busy.value = true
+        _busyText.value = "در حال ساخت کاربر آزمایشی در پنل..."
+        try {
+            val check = c.panelService.probeCreate()
+            _panelChecks.value = _panelChecks.value.filterNot { it.title == check.title } + check
+            _panelReport.value = runCatching { c.panelService.report(_panelChecks.value) }.getOrDefault("")
+            if (check.ok) success("ساخت کاربر در پنل کار می‌کند ✅") else failure("ساخت کاربر ناموفق: " + check.detail)
+        } catch (e: Exception) {
+            failure(e.message ?: "آزمون ساخت کاربر ناموفق بود")
+        } finally {
+            _busy.value = false
+            _busyText.value = ""
+        }
+    }
+
+    /** کپی گزارش عیب‌یابی برای ارسال */
+    fun copyPanelReport() = viewModelScope.launch {
+        val report = runCatching { c.panelService.report(_panelChecks.value) }.getOrDefault("")
+        _panelReport.value = report
+        if (report.isBlank()) failure("اول «عیب‌یابی» را اجرا کنید") else copyToClipboard(report)
+    }
+
     fun testPanel() = viewModelScope.launch {
         _busy.value = true
         _panelStatus.value = "در حال بررسی..."
         try {
             val r: PanelConnection = c.panelService.test()
+            refreshPanelEndpoints()
             _panelStatus.value = buildString {
                 append("متصل • نسخهٔ ").append(Money.toPersian(r.version.ifBlank { "?" }))
                 append(" • ").append(Money.toPersian(r.usersCount.toString())).append(" کاربر")
                 append(" • ").append(if (r.readOnly) "پنل read-only" else "قابل نوشتن")
                 if (!r.canAddUsers) append(" • سقف کاربران/ترافیک پر است")
                 if (r.endpoint.isNotBlank()) append(" • مسیر ").append(r.endpoint)
+                if (r.linkBase.isNotBlank()) append(" • لینک: ").append(r.linkBase)
             }
             success("اتصال پنل برقرار است (نسخه ${r.version})")
         } catch (e: Exception) {
@@ -562,6 +621,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         try {
             val checks = c.panelService.diagnose()
             _panelChecks.value = checks
+            _panelReport.value = runCatching { c.panelService.report(checks) }.getOrDefault("")
             val failed = checks.count { !it.ok }
             success(
                 if (failed == 0) "همهٔ مراحل اتصال درست است ✅"

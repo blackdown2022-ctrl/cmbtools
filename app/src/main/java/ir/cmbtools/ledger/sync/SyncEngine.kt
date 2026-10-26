@@ -73,13 +73,19 @@ class SyncEngine(
         val config = panelDao.config() ?: PanelConfig()
         if (!config.isConfigured) {
             throw PanelException(
-                "اتصال پنل تنظیم نشده است. در تنظیمات، دامنه، مسیر پروکسی ادمین و کلید API را وارد کنید.",
+                "اتصال پنل تنظیم نشده است. در تنظیمات، «آدرس پنل» (همان آدرس مرورگر) و «کلید API» را وارد کنید.",
                 PanelException.Kind.NOT_CONFIGURED
             )
         }
 
         val (users, meta) = client.fetchUsers()
-        val linkBase = meta.linkDomains.firstOrNull()?.base ?: prefs.current.fallbackSubscriptionBase
+        // پایهٔ لینک اشتراک، مستقل از مسیر ادمین است:
+        // اول مقدار ذخیره‌شده در تنظیمات پنل، بعد مقدار خودِ پنل (link_domains)، بعد مقدار قدیمی.
+        val linkBase = ir.cmbtools.ledger.panel.PanelUrl.normalizeLinkBase(
+            config.subscriptionBase.ifBlank {
+                meta.linkDomains.firstOrNull()?.base ?: prefs.current.fallbackSubscriptionBase
+            }
+        )
         val settings = prefs.current
         val firstRun = config.baselineAtMillis == 0L
         val known = panelDao.allAccounts().associateBy { it.panelUserUuid }

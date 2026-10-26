@@ -168,18 +168,41 @@ data class Expense(
     val note: String = ""
 )
 
+/**
+ * اتصال پنل هیدی‌فای.
+ *
+ * مدل بازطراحی‌شده (نسخهٔ ۰.۳.۱) — سه چیز از سه جای متفاوت می‌آید و
+ * دیگر با هم اشتباه نمی‌شوند:
+ *
+ *  ۱) **آدرس پنل** (`host` + `adminProxyPath` + `useHttps`): همان آدرسی که ادمین در
+ *     مرورگر باز می‌کند، مثل `https://panel.example.com/AbCdEf12/`.
+ *     از همین آدرس، مسیر پروکسی ادمین استخراج می‌شود و **همهٔ** درخواست‌های API روی
+ *     `…/api/v2/admin/…` ساخته می‌شوند (از جمله «ساخت کاربر» = `…/api/v2/admin/users/`).
+ *
+ *  ۲) **کلید API**: UUID ادمین، در هدر `Hiddify-API-Key`.
+ *
+ *  ۳) **پایهٔ لینک اشتراک** (`subscriptionBase`): آدرس مستقلی است که مشتری با آن
+ *     کانفیگ می‌گیرد، مثل `https://sub.example.com/xy12/`. در هیدی‌فای ۱۴ این آدرس از
+ *     `proxy_path_client` ساخته می‌شود و **با مسیر ادمین یکی نیست**. اگر خالی باشد،
+ *     اپ آن را خودکار از `link_domains` پنل پر می‌کند.
+ */
 @Entity(tableName = "panel_configs")
 @Serializable
 data class PanelConfig(
     @PrimaryKey val id: Long = 1,
     val name: String = "پنل اصلی",
-    /** مثل panel.example.com (بدون https) */
+    /** دامنه (و پورت) بدون https — مثل panel.example.com */
     val host: String = "",
-    /** مسیر پروکسی ادمین از تنظیمات پنل */
+    /** مسیر پروکسی ادمین (همان بخشی که در آدرس مرورگر پنل دیده می‌شود) */
     val adminProxyPath: String = "",
     /** UUID ادمین برای هدر Hiddify-API-Key */
     val apiKey: String = "",
     val useHttps: Boolean = true,
+    /**
+     * پایهٔ لینک اشتراک مشتری — مثلاً `https://panel.example.com/x7Yz12/`.
+     * جدا از مسیر ادمین؛ خالی = خودکار از پنل خوانده شود.
+     */
+    val subscriptionBase: String = "",
     /** آخرین نسخهٔ خوانده‌شده از پنل */
     val panelVersion: String = "",
     val lastSyncAt: Long = 0,
@@ -189,6 +212,14 @@ data class PanelConfig(
      */
     val baselineAtMillis: Long = 0
 ) {
+    /** آدرس پنل به‌شکل کامل؛ همان چیزی که در فیلد «آدرس پنل» نشان داده می‌شود */
+    val panelUrl: String
+        get() {
+            val scheme = if (useHttps) "https" else "http"
+            val path = adminProxyPath.trim().trim('/')
+            return "$scheme://${host.trim()}" + if (path.isBlank()) "" else "/$path"
+        }
+
     val isConfigured: Boolean get() = host.isNotBlank() && adminProxyPath.isNotBlank() && apiKey.isNotBlank()
 }
 

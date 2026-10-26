@@ -109,10 +109,16 @@ jobs:
           set -o pipefail
           ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
 
-      - name: بررسی ایمنی و نصب‌پذیری APK
+      - name: بررسی ایمنی برنامه (Lint)
+        id: lint
+        run: |
+          set -o pipefail
+          ./gradlew lintRelease --no-daemon --stacktrace 2>&1 | tee lint.log
+
+      - name: بررسی امضا و نصب‌پذیری APK
+        id: verify
         run: |
           set -euo pipefail
-          ./gradlew lintRelease --no-daemon --stacktrace
           APK=app/build/outputs/apk/release/app-release.apk
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           APKSIGNER="$SDK/build-tools/34.0.0/apksigner"
@@ -188,6 +194,8 @@ jobs:
           path: |
             app/build/reports/tests/**
             test.log
+            build.log
+            lint.log
           if-no-files-found: ignore
           retention-days: 14
 
@@ -206,14 +214,14 @@ jobs:
             grep -E '^e: ' build.log test.log 2>/dev/null | head -80 || echo "(هیچ)"
             echo '```'
             echo ""
-            echo "#### خطاهای Gradle / Android (\`error:\`)"
+            echo "#### خطاهای Gradle / Android / Lint"
             echo '```'
-            grep -E 'error:|Error:|Could not|Unresolved|Caused by' build.log 2>/dev/null | head -40 || echo "(هیچ)"
+            grep -Ei 'error:|Error:|Could not|Unresolved|Caused by|fatal|^.*\berror\b' build.log lint.log 2>/dev/null | head -60 || echo "(هیچ)"
             echo '```'
             echo ""
             echo "#### بخش «What went wrong»"
             echo '```'
-            grep -A 25 -E 'What went wrong|FAILURE: Build failed' build.log 2>/dev/null | head -70 || echo "(هیچ)"
+            grep -A 25 -E 'What went wrong|FAILURE: Build failed' build.log lint.log 2>/dev/null | head -90 || echo "(هیچ)"
             echo '```'
             echo ""
             echo "#### دسترسی مخازن"

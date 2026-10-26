@@ -139,7 +139,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val recentPayments: StateFlow<List<Payment>> = c.payments.observeRecent()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** Full history for financial reports; the screen uses LazyColumn to keep rendering responsive. */
+    val allPayments: StateFlow<List<Payment>> = c.paymentsDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val recentLedger: StateFlow<List<LedgerEntry>> = c.payments.observeRecentLedger()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allLedgerEntries: StateFlow<List<LedgerEntry>> = c.ledgerDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val unmatchedSms: StateFlow<List<BankSms>> = c.bankSmsDao2().observeUnmatched()

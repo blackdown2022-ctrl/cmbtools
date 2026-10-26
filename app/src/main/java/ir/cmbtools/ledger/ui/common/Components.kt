@@ -1,5 +1,6 @@
 package ir.cmbtools.ledger.ui.common
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -47,6 +49,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ir.cmbtools.ledger.core.Jalali
@@ -78,19 +81,39 @@ fun StatCard(
 ) {
     Card(
         modifier = modifier
+            .heightIn(min = 108.dp)
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
-        shape = RoundedCornerShape(18.dp),
-        // روی پس‌زمینهٔ روشن، یک سایهٔ نرم کارت را از صفحه جدا می‌کند
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Text(title, color = TextMuted, style = MaterialTheme.typography.labelMedium)
-            Spacer(Modifier.height(6.dp))
-            Text(value, color = accent, fontWeight = FontWeight.Bold, fontSize = 19.sp)
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(
+                title,
+                color = TextMuted,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(7.dp))
+            Text(
+                value,
+                color = accent,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
             if (subtitle != null) {
                 Spacer(Modifier.height(4.dp))
-                Text(subtitle, color = TextMuted, style = MaterialTheme.typography.labelMedium)
+                Text(
+                    subtitle,
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -110,11 +133,12 @@ fun SectionCard(
     if (!visible) return
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(16.dp)) {
             if (title != null) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(10.dp))
@@ -408,37 +432,36 @@ fun statusColor(status: String): Color = when (status) {
 
 @Composable
 fun GradientHeader(title: String, subtitle: String? = null, action: (@Composable () -> Unit)? = null) {
-    val scheme = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(
                 Brush.horizontalGradient(
-                    listOf(scheme.primaryContainer, scheme.surface)
+                    listOf(Color(0xFF082B68), Color(0xFF155EEF), Color(0xFF2F7BFF))
                 )
             )
-            .padding(horizontal = 16.dp, vertical = 16.dp)
+            .padding(horizontal = 18.dp, vertical = 18.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                 Text(
                     title,
                     style = MaterialTheme.typography.titleLarge,
-                    color = scheme.onPrimaryContainer,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (subtitle != null) {
                     Text(
                         subtitle,
-                        color = TextMuted,
+                        color = Color.White.copy(alpha = 0.82f),
                         style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -492,17 +515,18 @@ fun CustomerPickerDialog(
                 if (filtered.isEmpty()) {
                     EmptyState("مشتری‌ای پیدا نشد")
                 } else {
-                    LazyColumn(modifier = Modifier.height(260.dp)) {
+                    LazyColumn(modifier = Modifier.heightIn(max = 240.dp)) {
                         items(filtered, key = { it.id }) { customer ->
-                            Row(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { onPick(customer) }
-                                    .padding(vertical = 10.dp, horizontal = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                    .padding(vertical = 10.dp, horizontal = 4.dp)
                             ) {
-                                Text(customer.name)
-                                Text(customer.phone, color = TextMuted, style = MaterialTheme.typography.labelMedium)
+                                Text(customer.name, style = MaterialTheme.typography.bodyLarge)
+                                if (customer.phone.isNotBlank()) {
+                                    Text(customer.phone, color = TextMuted, style = MaterialTheme.typography.labelMedium)
+                                }
                             }
                         }
                     }

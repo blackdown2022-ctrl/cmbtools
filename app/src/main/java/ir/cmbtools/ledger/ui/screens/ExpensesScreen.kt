@@ -75,7 +75,7 @@ fun ExpensesScreen(vm: AppViewModel, nav: NavHostController) {
                 subtitle = "برای محاسبهٔ سود واقعی (سرور، پهنای‌باند، پیامک…)",
                 action = {
                     IconButton(onClick = { nav.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت", tint = TextMuted)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             )

@@ -134,6 +134,9 @@ interface PaymentDao {
     @Query("SELECT * FROM payments WHERE customerId = :customerId ORDER BY receivedAtEpochDay DESC, id DESC")
     fun observeByCustomer(customerId: Long): Flow<List<Payment>>
 
+    @Query("SELECT * FROM payments ORDER BY receivedAtEpochDay DESC, id DESC")
+    fun observeAll(): Flow<List<Payment>>
+
     @Query("SELECT * FROM payments ORDER BY receivedAtEpochDay DESC, id DESC LIMIT 100")
     fun observeRecent(): Flow<List<Payment>>
 
@@ -169,6 +172,9 @@ interface PaymentDao {
 interface LedgerDao {
     @Query("SELECT * FROM ledger_entries WHERE customerId = :customerId ORDER BY atEpochDay DESC, id DESC")
     fun observeByCustomer(customerId: Long): Flow<List<LedgerEntry>>
+
+    @Query("SELECT * FROM ledger_entries ORDER BY atEpochDay DESC, id DESC")
+    fun observeAll(): Flow<List<LedgerEntry>>
 
     @Query("SELECT * FROM ledger_entries ORDER BY atEpochDay DESC, id DESC LIMIT 200")
     fun observeRecent(): Flow<List<LedgerEntry>>

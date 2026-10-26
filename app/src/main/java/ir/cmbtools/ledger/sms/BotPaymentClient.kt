@@ -20,18 +20,6 @@ data class BotPaymentResult(
     val paymentConfirmed: Boolean = false,
     val fulfilled: Boolean = false,
     val retryable: Boolean = false,
-    val httpStatus: Int = 0,
-    val serverReason: String = ""
-)
-
-data class BotOrderStatusResult(
-    val ok: Boolean,
-    val found: Boolean = false,
-    val orderId: String = "",
-    val status: String = "",
-    val amountToman: Long = 0L,
-    val paymentMethod: String = "",
-    val message: String = "",
     val httpStatus: Int = 0
 )
 
@@ -59,55 +47,6 @@ class BotPaymentClient {
                 if (!result.ok) result
                 else if (result.version.isBlank()) result.copy(ok = false, message = "پاسخ سلامت سرور نسخهٔ ربات را ندارد")
                 else result.copy(message = "اتصال امن به سرور ربات برقرار است")
-            }
-        }
-
-    /** Read one order by its ID using salebot's documented public status endpoint. */
-    suspend fun getOrderStatus(serverUrl: String, orderId: String): BotOrderStatusResult =
-        withContext(Dispatchers.IO) {
-            val endpoint = normalizeConfirmUrl(serverUrl)
-                ?: return@withContext BotOrderStatusResult(false, message = "آدرس سرور معتبر نیست")
-            val id = orderId.trim()
-            if (!Regex("^[A-Za-z0-9_-]{4,40}$").matches(id)) {
-                return@withContext BotOrderStatusResult(false, message = "شناسهٔ سفارش باید ۴ تا ۴۰ حرف/عدد باشد")
-            }
-            try {
-                val statusUrl = Uri.parse(endpoint.removeSuffix(CONFIRM_PATH) + STATUS_PATH)
-                    .buildUpon()
-                    .appendQueryParameter("order_id", id)
-                    .build()
-                    .toString()
-                http.newCall(
-                    Request.Builder()
-                        .url(statusUrl)
-                        .header("Accept", "application/json")
-                        .get()
-                        .build()
-                ).execute().use { response ->
-                    val json = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
-                    if (!response.isSuccessful || json == null) {
-                        BotOrderStatusResult(
-                            false,
-                            message = "خواندن سفارش ناموفق بود (HTTP ${response.code})",
-                            httpStatus = response.code
-                        )
-                    } else {
-                        val status = json.optString("status")
-                        val found = status.isNotBlank() && status != "not_found"
-                        BotOrderStatusResult(
-                            ok = true,
-                            found = found,
-                            orderId = json.optString("order_id", id),
-                            status = status,
-                            amountToman = json.optLong("amount", 0L),
-                            paymentMethod = json.optString("payment_method"),
-                            message = if (found) "وضعیت سفارش از سرور خوانده شد" else "سفارشی با این شناسه در سرور پیدا نشد",
-                            httpStatus = response.code
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                BotOrderStatusResult(false, message = "خواندن سفارش از سرور انجام نشد: ${e.message ?: "خطای شبکه"}")
             }
         }
 
@@ -189,8 +128,7 @@ class BotPaymentClient {
                         version = version,
                         orderId = orderId,
                         retryable = status == 408 || status == 429 || status >= 500,
-                        httpStatus = status,
-                        serverReason = reason
+                        httpStatus = status
                     )
                 }
             }
@@ -205,7 +143,6 @@ class BotPaymentClient {
 
     companion object {
         const val CONFIRM_PATH = "/wp-json/webdide-cv/v1/confirm"
-        const val STATUS_PATH = "/wp-json/webdide-cv/v1/status"
 
         /** Accept only HTTPS and the bot's exact documented confirm route (or a bare HTTPS origin). */
         fun normalizeConfirmUrl(input: String): String? {
@@ -225,6 +162,6 @@ class BotPaymentClient {
 
         fun isEligibleBankDeposit(parsed: ParsedBankSms): Boolean =
             parsed.isCredit && !parsed.isOtp && !parsed.isReversal && parsed.amountRial > 0L &&
-                parsed.amountRial % 10L == 0L && parsed.refNo.isNotBlank() && parsed.bank != "بانک ناشناس"
+                parsed.refNo.isNotBlank() && parsed.bank != "بانک ناشناس"
     }
 }

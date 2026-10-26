@@ -330,7 +330,7 @@ class PanelClient(
         }
     }
 
-    private fun panelExceptionFor(e: Exception): PanelException = when (e) {
+    private fun panelExceptionFor(e: Throwable): PanelException = when (e) {
         is PanelException -> e
         is java.net.UnknownHostException -> PanelException(
             "دامنهٔ پنل پیدا نشد (اتصال اینترنت یا دامنه را بررسی کنید)",

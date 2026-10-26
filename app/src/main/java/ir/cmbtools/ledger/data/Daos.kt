@@ -123,6 +123,10 @@ interface InvoiceDao {
     /** آخرین فاکتور یک اکانت پنل */
     @Query("SELECT * FROM invoices WHERE panelUserUuid = :uuid AND status != 'VOID' ORDER BY id DESC LIMIT 1")
     suspend fun lastForPanelUser(uuid: String): Invoice?
+
+    /** فاکتورهای خودکار متصل به اکانت؛ برای بازیابی پیامک ناموفق پس از همگام‌سازی بعدی */
+    @Query("SELECT * FROM invoices WHERE panelUserUuid = :uuid AND autoIssued = 1 AND status != 'VOID' ORDER BY id ASC")
+    suspend fun autoIssuedForPanelUser(uuid: String): List<Invoice>
 }
 
 @Dao
@@ -309,4 +313,7 @@ interface SmsOutboxDao {
 
     @Query("SELECT * FROM sms_outbox WHERE id = :id")
     suspend fun byId(id: Long): SmsOutbox?
+
+    @Query("SELECT * FROM sms_outbox WHERE invoiceId = :invoiceId ORDER BY createdAt DESC, id DESC LIMIT 1")
+    suspend fun latestForInvoice(invoiceId: Long): SmsOutbox?
 }

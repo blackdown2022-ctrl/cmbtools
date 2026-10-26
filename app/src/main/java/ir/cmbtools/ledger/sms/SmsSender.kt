@@ -8,6 +8,7 @@ import androidx.core.content.ContextCompat
 import ir.cmbtools.ledger.core.AppSettings
 import ir.cmbtools.ledger.core.SmsGatewayProvider
 import ir.cmbtools.ledger.core.SmsMode
+import ir.cmbtools.ledger.core.SmsRetryPolicy
 import ir.cmbtools.ledger.data.SmsOutbox
 import ir.cmbtools.ledger.data.SmsOutboxDao
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +39,13 @@ class SmsSender(
         .followSslRedirects(false)
         .build()
 
+    /** Automatic sync may retry a failed/pending invoice SMS, but never repeat a sent message. */
+    suspend fun invoiceSmsRetryDue(invoiceId: Long, nowMillis: Long = System.currentTimeMillis()): Boolean {
+        if (invoiceId <= 0L) return false
+        val latest = outboxDao.latestForInvoice(invoiceId) ?: return false
+        return SmsRetryPolicy.shouldRetry(latest.status, latest.createdAt, nowMillis)
+    }
+
     suspend fun send(
         settings: AppSettings,
         to: String,
@@ -46,9 +54,6 @@ class SmsSender(
         customerId: Long = 0
     ): SendResult = withContext(Dispatchers.IO) {
         val phone = normalizePhone(to)
-        if (phone.length < 10) {
-            return@withContext SendResult(false, "شمارهٔ موبایل نامعتبر است")
-        }
         val parts = SmsTemplate.parts(body)
         val logId = outboxDao.insert(
             SmsOutbox(
@@ -60,6 +65,11 @@ class SmsSender(
                 customerId = customerId
             )
         )
+        if (phone.length < 10) {
+            val error = "شمارهٔ موبایل نامعتبر است یا ثبت نشده"
+            outboxDao.mark(logId, SmsOutbox.FAILED, error, System.currentTimeMillis())
+            return@withContext SendResult(false, error)
+        }
 
         val result = when (settings.smsMode) {
             SmsMode.SIM -> sendWithSim(phone, body)

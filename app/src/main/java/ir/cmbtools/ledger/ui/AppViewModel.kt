@@ -699,7 +699,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             if (report.problems.isNotEmpty()) {
                 _events.value = UiEvent(
                     report.message + "\n" + report.problems.take(3).joinToString("\n"),
-                    report.invoicesIssued == 0 && report.newUsers > 0
+                    report.problems.isNotEmpty()
                 )
             }
         } catch (e: Exception) {

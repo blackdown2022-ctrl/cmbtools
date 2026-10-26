@@ -18,10 +18,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -57,6 +59,7 @@ fun CustomersScreen(vm: AppViewModel, nav: NavHostController) {
     val rows by vm.customers.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     var showAdd by remember { mutableStateOf(false) }
+    var customerToDelete by remember { mutableStateOf<CustomerRow?>(null) }
 
     val filtered = remember(query, rows) {
         if (query.isBlank()) rows
@@ -104,11 +107,36 @@ fun CustomersScreen(vm: AppViewModel, nav: NavHostController) {
             }
 
             items(filtered, key = { it.customer.id }) { row ->
-                CustomerRowCard(row) { nav.navigate("customer/${row.customer.id}") }
+                CustomerRowCard(
+                    row = row,
+                    onClick = { nav.navigate("customer/${row.customer.id}") },
+                    onDelete = { customerToDelete = row }
+                )
             }
 
             item { Spacer(Modifier.height(70.dp)) }
         }
+    }
+
+    customerToDelete?.let { row ->
+        AlertDialog(
+            onDismissRequest = { customerToDelete = null },
+            title = { Text("حذف مشتری از فهرست") },
+            text = {
+                Text(
+                    "«${row.customer.name}» از فهرست مشتریان فعال حذف می‌شود. فاکتورها، پرداخت‌ها و سوابق مالی برای حفظ حسابداری باقی می‌مانند."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.archiveCustomer(row.customer.id)
+                    customerToDelete = null
+                }) { Text("حذف از فهرست") }
+            },
+            dismissButton = {
+                TextButton(onClick = { customerToDelete = null }) { Text("انصراف") }
+            }
+        )
     }
 
     if (showAdd) {
@@ -125,7 +153,7 @@ fun CustomersScreen(vm: AppViewModel, nav: NavHostController) {
 }
 
 @Composable
-fun CustomerRowCard(row: CustomerRow, onClick: () -> Unit) {
+fun CustomerRowCard(row: CustomerRow, onClick: () -> Unit, onDelete: () -> Unit = {}) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -172,6 +200,9 @@ fun CustomerRowCard(row: CustomerRow, onClick: () -> Unit) {
                 color = TextMuted,
                 style = MaterialTheme.typography.labelMedium
             )
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Default.Delete, contentDescription = "حذف مشتری", tint = AccentRed)
         }
     }
 }

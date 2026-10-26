@@ -57,10 +57,12 @@ class AutoSyncService : Service() {
                 lastMessage = runCatching {
                     val report = app.container.syncEngine.sync()
                     val time = Jalali.formatDateTime(System.currentTimeMillis())
-                    if (report.invoicesIssued > 0 || report.smsSent > 0) {
-                        app.notifications.show("همگام‌سازی خودکار", report.message)
+                    val details = report.problems.take(3).joinToString("\n")
+                    val summary = listOf(report.message, details).filter { it.isNotBlank() }.joinToString("\n")
+                    if (report.invoicesIssued > 0 || report.smsSent > 0 || report.problems.isNotEmpty()) {
+                        app.notifications.show("همگام‌سازی خودکار", summary)
                     }
-                    "${report.message} • $time"
+                    "${summary.ifBlank { report.message }} • $time"
                 }.getOrElse { e ->
                     "${e.message ?: "خطای همگام‌سازی"} • ${Jalali.formatDateTime(System.currentTimeMillis())}"
                 }

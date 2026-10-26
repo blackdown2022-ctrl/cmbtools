@@ -39,6 +39,7 @@ class Notifications(private val context: Context) {
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setOngoing(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setSilent(true)
@@ -51,6 +52,7 @@ class Notifications(private val context: Context) {
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setAutoCancel(true)
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(id, notification) }

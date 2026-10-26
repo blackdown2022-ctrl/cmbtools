@@ -1,6 +1,9 @@
 package ir.cmbtools.ledger.ui.screens
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import ir.cmbtools.ledger.BuildConfig
@@ -70,6 +74,14 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
     val accounts by vm.panelAccounts.collectAsStateWithLifecycle()
     val panelEndpoints by vm.panelEndpoints.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val sendSmsPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) vm.updateSettings { it.copy(smsMode = SmsMode.SIM) }
+        else vm.report("مجوز ارسال پیامک داده نشد؛ روش درگاه پیامکی فعال می‌ماند", isError = true)
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        vm.setAutoSyncEnabled(true)
+        if (!granted) vm.report("همگام‌سازی روشن شد؛ اما اعلان‌های آن در تنظیمات اندروید خاموش است")
+    }
 
     // سه فیلد مستقل و صریح (بازطراحی ۰.۳.۱):
     //   آدرس کامل پنل  ← همان آدرس مرورگر (مسیر ادمین از آن استخراج می‌شود)
@@ -105,6 +117,14 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
     }
 
     val scope = rememberCoroutineScope()
+    val saveBackupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) {
+            ExportManager(context, vm.appContainer()).saveBackup(uri) { result ->
+                result.onSuccess { vm.report("فایل پشتیبان در دستگاه ذخیره شد") }
+                    .onFailure { vm.report("ذخیرهٔ پشتیبان ناموفق: ${it.message}", isError = true) }
+            }
+        }
+    }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             scope.launch {
@@ -375,15 +395,28 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("همگام‌سازی خودکار با پنل")
                         Text(
-                            "هر ${Money.toPersian(settings.autoSyncMinutes.toString())} دقیقه، در پس‌زمینه",
+                            "هر ${Money.toPersian(settings.autoSyncMinutes.toString())} دقیقه در سرویس فعال؛ پشتیبان اندروید هر ۱۵ دقیقه هم تلاش می‌کند",
                             color = TextMuted,
                             style = MaterialTheme.typography.labelMedium
                         )
                     }
                     Switch(
                         checked = settings.autoSyncEnabled,
-                        onCheckedChange = { vm.setAutoSyncEnabled(it) }
+                        onCheckedChange = { enabled ->
+                            if (enabled && Build.VERSION.SDK_INT >= 33 &&
+                                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else vm.setAutoSyncEnabled(enabled)
+                        }
                     )
+                }
+                if (settings.autoSyncEnabled && Build.VERSION.SDK_INT >= 33 &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    TextButton(onClick = { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }) {
+                        Text("اجازهٔ نمایش اعلان همگام‌سازی را بده")
+                    }
                 }
                 if ((config?.lastSyncAt ?: 0L) > 0L) {
                     Text(
@@ -466,7 +499,11 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     items = listOf(SmsMode.GATEWAY, SmsMode.SIM),
                     selected = settings.smsMode,
                     itemLabel = { if (it == SmsMode.SIM) "سیم‌کارت گوشی (رایگان)" else "درگاه پیامکی (با گزارش تحویل)" },
-                    onSelect = { mode -> vm.updateSettings { it.copy(smsMode = mode) } }
+                    onSelect = { mode ->
+                        if (mode == SmsMode.SIM && ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
+                            sendSmsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
+                        } else vm.updateSettings { it.copy(smsMode = mode) }
+                    }
                 )
                 if (settings.smsMode == SmsMode.GATEWAY) {
                     Spacer(Modifier.height(8.dp))
@@ -654,14 +691,19 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 }
                 Spacer(Modifier.height(10.dp))
                 Button(
+                    onClick = { saveBackupLauncher.launch("tiznet-backup.json") },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("ذخیرهٔ فایل پشتیبان در دستگاه") }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
                     onClick = {
                         ExportManager(context, vm.appContainer()).exportBackup { r ->
-                            r.onSuccess { vm.report("پشتیبان کامل ساخته شد: " + it.name) }
-                                .onFailure { vm.report("ناموفق: ${it.message}", isError = true) }
+                            r.onSuccess { vm.report("پشتیبان کامل آمادهٔ اشتراک‌گذاری است: " + it.name) }
+                                .onFailure { vm.report("ساخت پشتیبان ناموفق: ${it.message}", isError = true) }
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("ساخت فایل پشتیبان کامل (JSON)") }
+                ) { Text("اشتراک‌گذاری فایل پشتیبان (JSON)") }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
@@ -670,7 +712,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 Spacer(Modifier.height(6.dp))
                 Text(
                     "بازیابی، داده‌های فعلی را با محتوای فایل جایگزین می‌کند (قبلش یک پشتیبان تازه بگیرید). " +
-                        "فایل را در Google Drive/تلگرام خودتان هم نگه دارید: بدون آن، گم شدن گوشی = از دست رفتن دفتر.",
+                        "فایل پشتیبان را در پوشه‌ای امن از دستگاه یا فضای شخصی نگه دارید؛ شامل اطلاعات مشتری و تنظیمات محرمانهٔ پنل است و آن را عمومی نفرستید.",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )

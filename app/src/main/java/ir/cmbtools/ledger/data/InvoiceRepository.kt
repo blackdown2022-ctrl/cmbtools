@@ -2,7 +2,6 @@ package ir.cmbtools.ledger.data
 
 import ir.cmbtools.ledger.core.InvoiceKind
 import ir.cmbtools.ledger.core.InvoiceStatus
-import ir.cmbtools.ledger.core.Jalali
 import ir.cmbtools.ledger.core.LedgerAccount
 import ir.cmbtools.ledger.core.LedgerDirection
 import kotlinx.coroutines.flow.Flow
@@ -22,7 +21,8 @@ data class NewInvoiceLine(
 class InvoiceRepository(
     private val invoices: InvoiceDao,
     private val ledger: LedgerDao,
-    private val payments: PaymentDao
+    private val payments: PaymentDao,
+    private val invoiceNumbers: InvoiceNumberCounterDao
 ) {
     private val numberMutex = Mutex()
 
@@ -37,6 +37,20 @@ class InvoiceRepository(
     suspend fun get(id: Long): Invoice? = invoices.byId(id)
 
     suspend fun lines(invoiceId: Long): List<InvoiceLine> = invoices.lines(invoiceId)
+
+    /** Hard-delete while returning allocations to the customers' unapplied payment credit. */
+    suspend fun delete(invoiceId: Long) {
+        val invoice = invoices.byId(invoiceId) ?: return
+        payments.allocationsForInvoice(invoiceId)
+            .groupBy { it.paymentId }
+            .forEach { (paymentId, allocations) ->
+                val payment = payments.byId(paymentId) ?: return@forEach
+                val returnedCredit = allocations.sumOf { it.amountRial }
+                payments.update(payment.copy(unallocatedRial = payment.unallocatedRial + returnedCredit))
+            }
+        ledger.deleteInvoiceEntries(invoiceId)
+        invoices.delete(invoice.id)
+    }
 
     /**
      * فاکتور را می‌سازد و ثبت بدهکاری در دفتر می‌زند.
@@ -69,9 +83,7 @@ class InvoiceRepository(
         val total = subtotal - discount
 
         val epochDay = issuedAt.toEpochDay()
-        val prefix = "${Jalali.fromGregorian(issuedAt).year}-"
-        val seq = invoices.countByPrefix(prefix) + 1
-        val number = prefix + seq.toString().padStart(4, '0')
+        val number = invoiceNumbers.reserveNext().toString()
 
         // ماندهٔ مشتری پیش از این فاکتور. مثبت = بدهکار، منفی = بستانکار (اعتبار).
         val prevBalance = ledger.balance(customerId)

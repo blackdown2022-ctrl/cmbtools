@@ -1,8 +1,5 @@
 package ir.cmbtools.ledger.ui
 
-import android.Manifest
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
@@ -117,19 +114,6 @@ fun AppRoot(container: AppContainer, notifications: Notifications) {
     val snackbar = remember { SnackbarHostState() }
     val event by vm.events.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
-
-    // درخواست مجوزها یک‌بار در شروع
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
-    LaunchedEffect(Unit) {
-        permissionLauncher.launch(
-            arrayOf(
-                Manifest.permission.RECEIVE_SMS,
-                Manifest.permission.READ_SMS,
-                Manifest.permission.SEND_SMS,
-                Manifest.permission.POST_NOTIFICATIONS
-            )
-        )
-    }
 
     LaunchedEffect(event) {
         event?.let {
@@ -358,14 +342,13 @@ private fun SideRail(navController: NavHostController) {
 }
 
 /**
- * جابه‌جایی بین سربرگ‌ها.
- * `saveState/restoreState` وضعیت اسکرول را نگه می‌دارد و `popUpTo` از انباشته‌شدن
- * صفحه‌ها جلوگیری می‌کند (عامل کندی تدریجی جابه‌جایی در نسخهٔ قبل).
+ * جابه‌جایی بین سربرگ‌های اصلی. هر بار مقصد را از ریشه باز می‌کند؛ restoreState قبلی
+ * می‌توانست stack ذخیره‌شدهٔ تنظیمات را هنگام انتخاب داشبورد دوباره برگرداند.
  */
 private fun NavHostController.navigateToTab(route: String) {
+    if (currentDestination?.route == route) return
     navigate(route) {
-        popUpTo("dashboard") { saveState = true }
+        popUpTo("dashboard") { inclusive = false }
         launchSingleTop = true
-        restoreState = true
     }
 }

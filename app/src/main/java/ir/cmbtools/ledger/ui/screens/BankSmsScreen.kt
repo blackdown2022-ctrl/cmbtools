@@ -1,5 +1,9 @@
 package ir.cmbtools.ledger.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,6 +30,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -53,6 +59,14 @@ fun BankSmsScreen(vm: AppViewModel, nav: NavHostController) {
     var tab by remember { mutableStateOf(0) }
     var matchingSms by remember { mutableStateOf<BankSms?>(null) }
     var pickCustomerFor by remember { mutableStateOf<BankSms?>(null) }
+    val context = LocalContext.current
+    var receiveSmsGranted by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED)
+    }
+    val receiveSmsPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        receiveSmsGranted = granted
+        vm.report(if (granted) "دریافت خودکار پیامک بانکی فعال شد" else "برای دریافت خودکار، مجوز پیامک بانکی لازم است", isError = !granted)
+    }
 
     Column(Modifier.fillMaxSize()) {
         GradientHeader(
@@ -81,6 +95,17 @@ fun BankSmsScreen(vm: AppViewModel, nav: NavHostController) {
                 .padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (!receiveSmsGranted) {
+                item {
+                    SectionCard(title = "دریافت خودکار پیامک بانکی خاموش است") {
+                        Text("برای خواندن پیامک‌های واریز و ثبت خودکار پرداخت، فقط مجوز دریافت پیامک لازم است. اپ در زمان نصب مجوزهای پیامکی را یک‌جا درخواست نمی‌کند.")
+                        Spacer(Modifier.height(8.dp))
+                        Button(onClick = { receiveSmsPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS) }) {
+                            Text("فعال‌سازی دریافت پیامک بانکی")
+                        }
+                    }
+                }
+            }
             if (list.isEmpty()) {
                 item {
                     EmptyState(

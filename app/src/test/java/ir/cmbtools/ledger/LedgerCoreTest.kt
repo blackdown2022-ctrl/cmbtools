@@ -293,7 +293,7 @@ class InvoiceTemplateTest {
         kind: String = InvoiceKind.RENEW
     ) = Invoice(
         id = 7,
-        number = "1405-0042",
+        number = "42",
         customerId = 1,
         issuedAtEpochDay = LocalDate.of(2026, 10, 25).toEpochDay(),
         totalRial = total,
@@ -315,7 +315,7 @@ class InvoiceTemplateTest {
         val body = SmsTemplate.render(AppSettings(), invoice(), customer, emptyList(), "")
         assertTrue(body.contains("علی رضایی"))
         // شمارهٔ فاکتور فارسی است (خواستهٔ کاربر) ولی شمارهٔ کارت لاتین می‌ماند
-        assertTrue(body.contains(Money.toPersian("1405-0042")))
+        assertTrue(body.contains(Money.toPersian("42")))
         assertTrue(body.contains("یک‌ماهه ۳۰ گیگ"))
         assertTrue(body.contains("6037-9977-1234-5678"))
         // تاریخ و ساعت (شمسی، با ارقام فارسی)
@@ -388,7 +388,7 @@ class InvoiceTemplateTest {
         assertFalse(body.contains("http"))
         // بقیهٔ اطلاعات فاکتور سر جایشان هستند
         assertTrue(body.contains("6037-9977-1234-5678"))
-        assertTrue(body.contains(Money.toPersian("1405-0042")))
+        assertTrue(body.contains(Money.toPersian("42")))
     }
 
     @Test
@@ -781,7 +781,8 @@ class BackupPayloadTest {
                 apiKey = "0000-1111",
                 useHttps = true
             ),
-            settings = AppSettings(businessName = "فروشگاه من", paymentCardNumber = "6037-9977-1234-5678")
+            settings = AppSettings(businessName = "فروشگاه من", paymentCardNumber = "6037-9977-1234-5678"),
+            invoiceNumberHighWatermark = 9
         )
         val text = json.encodeToString(ir.cmbtools.ledger.data.BackupPayload.serializer(), payload)
         assertTrue(text.contains("\"settings\""))
@@ -791,6 +792,7 @@ class BackupPayloadTest {
         val back = json.decodeFromString(ir.cmbtools.ledger.data.BackupPayload.serializer(), text)
         assertEquals("panel.example.com", back.panelConfig?.host)
         assertEquals("فروشگاه من", back.settings?.businessName)
+        assertEquals(9L, back.invoiceNumberHighWatermark)
         assertEquals(1, back.customers.size)
     }
 
@@ -802,6 +804,24 @@ class BackupPayloadTest {
         assertNull(back.settings)
         assertNull(back.panelConfig)
         assertEquals(1, back.version) // همان نسخه‌ای که در فایل نوشته شده
+    }
+}
+
+class InvoiceNumberingTest {
+    @Test
+    fun numbers_are_positive_plain_integers_and_migration_uses_chronological_order() {
+        val refs = listOf(
+            ir.cmbtools.ledger.core.InvoiceNumbering.InvoiceRef(7, 20),
+            ir.cmbtools.ledger.core.InvoiceNumbering.InvoiceRef(2, 10),
+            ir.cmbtools.ledger.core.InvoiceNumbering.InvoiceRef(3, 10)
+        )
+        val assignments = ir.cmbtools.ledger.core.InvoiceNumbering.assignSequentially(refs)
+        assertEquals(listOf(2L, 3L, 7L), assignments.map { it.id })
+        assertEquals(listOf("1", "2", "3"), assignments.map { it.number })
+        assertTrue(assignments.all { assignment ->
+            assignment.number.toLong() > 0L && assignment.number.all { it in '0'..'9' }
+        })
+        assertEquals(101L, ir.cmbtools.ledger.core.InvoiceNumbering.next(100, 8))
     }
 }
 

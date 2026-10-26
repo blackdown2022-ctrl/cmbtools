@@ -1,5 +1,6 @@
 package ir.cmbtools.ledger.panel
 
+import ir.cmbtools.ledger.BuildConfig
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -124,8 +125,9 @@ class PanelHttp {
         .writeTimeout(60, TimeUnit.SECONDS)
         .callTimeout(180, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
-        .followRedirects(true)
-        .followSslRedirects(true)
+        // API key is a custom header; never forward it to a redirect's origin.
+        .followRedirects(false)
+        .followSslRedirects(false)
         .build()
 
     fun get(url: String, apiKey: String): HttpResult =
@@ -150,7 +152,7 @@ class PanelHttp {
         builder.header(
             "User-Agent",
             "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36 cmbtools/0.3.2"
+                "(KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36 cmbtools/${BuildConfig.VERSION_NAME}"
         )
         when (method) {
             "GET" -> builder.get()

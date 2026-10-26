@@ -97,7 +97,7 @@ object SmsTemplate {
         footer: String = settings.invoiceFooter
     ): String {
         val sample = Invoice(
-            number = "1405-0042",
+            number = "42",
             customerId = 0,
             issuedAtEpochDay = java.time.LocalDate.now().toEpochDay(),
             subtotalRial = 1_500_000,

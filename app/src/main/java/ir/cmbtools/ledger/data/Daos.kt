@@ -98,14 +98,14 @@ interface InvoiceDao {
     @Query("SELECT * FROM invoice_lines WHERE invoiceId = :invoiceId ORDER BY id")
     suspend fun lines(invoiceId: Long): List<InvoiceLine>
 
-    @Query("SELECT COUNT(*) FROM invoices WHERE number LIKE :prefix || '%'")
-    suspend fun countByPrefix(prefix: String): Int
-
     @Insert
     suspend fun insert(invoice: Invoice): Long
 
     @Update
     suspend fun update(invoice: Invoice)
+
+    @Query("DELETE FROM invoices WHERE id = :invoiceId")
+    suspend fun delete(invoiceId: Long)
 
     @Insert
     suspend fun insertLines(lines: List<InvoiceLine>)
@@ -135,6 +135,9 @@ interface PaymentDao {
 
     @Query("SELECT * FROM payments WHERE id = :id")
     suspend fun byId(id: Long): Payment?
+
+    @Query("SELECT * FROM payment_allocations WHERE invoiceId = :invoiceId")
+    suspend fun allocationsForInvoice(invoiceId: Long): List<PaymentAllocation>
 
     @Insert
     suspend fun insert(payment: Payment): Long
@@ -168,6 +171,9 @@ interface LedgerDao {
 
     @Insert
     suspend fun insert(entry: LedgerEntry): Long
+
+    @Query("DELETE FROM ledger_entries WHERE refId = :refId AND refType IN ('INVOICE', 'INVOICE_VOID')")
+    suspend fun deleteInvoiceEntries(refId: Long)
 
     @Insert
     suspend fun insertAll(entries: List<LedgerEntry>)
@@ -253,6 +259,9 @@ interface PanelDao {
 
     @Query("DELETE FROM panel_accounts WHERE panelId = :panelId")
     suspend fun clearAccounts(panelId: Long)
+
+    @Query("DELETE FROM panel_accounts WHERE panelUserUuid = :uuid")
+    suspend fun deleteAccount(uuid: String)
 
     /** همهٔ اکانت‌ها به‌صورت لیست (همگام‌سازی خودکار) */
     @Query("SELECT * FROM panel_accounts")

@@ -12,6 +12,8 @@ import ir.cmbtools.ledger.data.PanelDao
 import ir.cmbtools.ledger.panel.PanelClient
 import ir.cmbtools.ledger.panel.PanelException
 import ir.cmbtools.ledger.panel.PanelUserDto
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** خروجی یک دور همگام‌سازی، برای نمایش خلاصه در UI و لاگ */
 data class SyncReport(
@@ -71,7 +73,12 @@ class SyncEngine(
     private val prefs: Prefs
 ) {
 
-    suspend fun sync(allowInvoicing: Boolean = true): SyncReport {
+    private val syncMutex = Mutex()
+
+    suspend fun sync(allowInvoicing: Boolean = true): SyncReport =
+        syncMutex.withLock { syncInternal(allowInvoicing) }
+
+    private suspend fun syncInternal(allowInvoicing: Boolean): SyncReport {
         val config = panelDao.config() ?: PanelConfig()
         if (!config.isConfigured) {
             throw PanelException(

@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import ir.cmbtools.ledger.core.InvoiceNumbering
 
 @Database(
     entities = [
@@ -19,10 +20,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Expense::class,
         PanelConfig::class,
         PanelAccount::class,
+        InvoiceNumberCounter::class,
         BankSms::class,
         SmsOutbox::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -33,6 +35,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun ledger(): LedgerDao
     abstract fun expenses(): ExpenseDao
     abstract fun panel(): PanelDao
+    abstract fun invoiceNumberCounter(): InvoiceNumberCounterDao
     abstract fun bankSms(): BankSmsDao
     abstract fun smsOutbox(): SmsOutboxDao
     abstract fun backup(): BackupDao
@@ -100,10 +103,45 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * ۵ → ۶: همهٔ شماره‌های قدیمی به ترتیب تاریخ از ۱ به بعد عددی می‌شوند و
+         * شمارندهٔ دائمی ساخته می‌شود تا حذف فاکتور باعث استفادهٔ دوباره از شماره نشود.
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS invoice_number_counter " +
+                        "(id INTEGER NOT NULL, lastNumber INTEGER NOT NULL, PRIMARY KEY(id))"
+                )
+                val refs = mutableListOf<InvoiceNumbering.InvoiceRef>()
+                db.query("SELECT id, issuedAtEpochDay FROM invoices").use { cursor ->
+                    while (cursor.moveToNext()) {
+                        refs += InvoiceNumbering.InvoiceRef(cursor.getLong(0), cursor.getLong(1))
+                    }
+                }
+                val assignments = InvoiceNumbering.assignSequentially(refs)
+                val tempPrefix = "__tiznet_invoice_migration_${System.currentTimeMillis()}_"
+                db.execSQL("UPDATE invoices SET number = '$tempPrefix' || id")
+                assignments.forEach { assignment ->
+                    val number = assignment.number
+                    val id = assignment.id
+                    db.execSQL("UPDATE invoices SET number = ? WHERE id = ?", arrayOf<Any>(number, id))
+                    db.execSQL(
+                        "UPDATE ledger_entries SET memo = CASE " +
+                            "WHEN refType = 'INVOICE_VOID' THEN ? ELSE ? END " +
+                            "WHERE refId = ? AND refType IN ('INVOICE', 'INVOICE_VOID')",
+                        arrayOf<Any>("ابطال فاکتور $number", "فاکتور $number", id)
+                    )
+                }
+                db.execSQL(
+                    "INSERT OR REPLACE INTO invoice_number_counter (id, lastNumber) VALUES (1, ${assignments.size})"
+                )
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "cmb-ledger.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
-                .fallbackToDestructiveMigration()
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
     }
 }

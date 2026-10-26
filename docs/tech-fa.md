@@ -23,8 +23,7 @@ ui/ (Compose)  ── AppViewModel ──┬── data/ (Room: DAO + Repository
 
 - **core/Money**: پارس/قالب‌بندی ارقام فارسی و عربی، تومان↔ریال.
 - **core/Jalali**: تبدیل دقیق میلادی↔شمسی (الگوریتم jalaali-js)، قالب‌بندی فارسی، پارس ورودی.
-- **core/Prefs**: `EncryptedSharedPreferences` (AES-256-GCM، کلید در Keystore) برای کلید API پنل،
-  کلید درگاه پیامک، قالب پیامک و رمز قفل.
+- **core/Prefs**: `EncryptedSharedPreferences` (AES-256-GCM، کلید در Keystore) برای کلید درگاه پیامک، تنظیمات قالب و PIN قفل. توجه: کلید API هیدی‌فای فعلاً در جدول خصوصی Room ذخیره می‌شود (دسترسی محدود به sandbox اپ، نه SQLCipher).
 
 ## ۳) مدل داده (Room، نسخه ۱)
 
@@ -161,10 +160,11 @@ SMS_RECEIVED → ادغام بخش‌ها → BankSmsParser
 
 ## ۷) امنیت
 
-- قفل اپ: رمز ۴ رقمی (ذخیره در EncryptedSharedPreferences).
-- کلید API پنل هرگز لاگ نمی‌شود (`HttpLoggingInterceptor.Level.NONE`).
-- `allowBackup=false` + قواعد `data_extraction_rules` → دیتابیس به ابر بکاپ نمی‌رود.
-- مجوزها: `RECEIVE_SMS`, `READ_SMS`, `SEND_SMS` (اختیاری)، `POST_NOTIFICATIONS`.
+- PIN قفل و کلید درگاه پیامک در `EncryptedSharedPreferences` هستند. کلید پنل در Room خصوصی اپ ذخیره می‌شود؛ Room این نسخه SQLCipher ندارد.
+- کلید پنل در request header می‌رود، لاگ درخواست/بدنه وجود ندارد و redirect خودکار خاموش است تا کلید به origin دیگری نشت نکند.
+- `allowBackup=false` + `data_extraction_rules` → دیتابیس به بکاپ سیستم نمی‌رود. فایل پشتیبان دستی JSON رمزگذاری‌شده نیست و شامل اطلاعات محرمانه است.
+- FileProvider غیرقابل‌صادرات است و فقط مسیرهای export مشخص‌شده را به گیرندهٔ share می‌دهد.
+- مجوزها هنگام استفاده درخواست می‌شوند: `RECEIVE_SMS` فقط از صفحهٔ بانک، `SEND_SMS` فقط برای روش سیم‌کارت، `POST_NOTIFICATIONS` هنگام روشن‌کردن همگام‌سازی. `READ_SMS` در نسخهٔ فعلی نیست.
 
 ## ۸) نکات شناخته‌شده / کارهای بعدی
 

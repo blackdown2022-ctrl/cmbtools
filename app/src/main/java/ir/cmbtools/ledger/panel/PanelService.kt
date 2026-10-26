@@ -86,6 +86,11 @@ class PanelService(
 
     suspend fun test(): PanelConnection = client.testConnection()
 
+    /** حذف اکانت از خود پنل؛ در صورت خطا، حذف محلی/فاکتور هم انجام نمی‌شود. */
+    suspend fun deletePanelAccount(uuid: String) {
+        if (uuid.isNotBlank()) client.deleteUser(uuid)
+    }
+
     /**
      * ساخت اکانت جدید برای مشتری؛ نام پنل دقیقاً همان نام واردشدهٔ مشتری است.
      */

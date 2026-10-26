@@ -21,9 +21,15 @@ class BankSmsReceiver : BroadcastReceiver() {
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
         val app = context.applicationContext as? LedgerApp ?: return
+        val allowedSender = app.container.prefs.current.bankSmsAllowedSender
+
+        // سرشماره باید دقیقاً با allowlist تنظیمات یکی باشد؛ خالی بودن فیلد یعنی رد همه.
+        // متن پیامک فرستنده‌های دیگر نه parse می‌شود، نه ذخیره و نه به ربات ارسال می‌شود.
+        val grouped = messages.groupBy { it.originatingAddress ?: "" }
+            .filterKeys { BankSmsSenderFilter.allows(it, allowedSender) }
+        if (grouped.isEmpty()) return
 
         // پیامک چندبخشی را ادغام می‌کنیم. goAsync مانع توقف کار DB/صف WorkManager پس از خروج از onReceive است.
-        val grouped = messages.groupBy { it.originatingAddress ?: "" }
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {

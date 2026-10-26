@@ -44,7 +44,36 @@ class CustomerRepository(
 
     fun observeBalance(id: Long): Flow<Long> = ledger.observeBalance(id)
 
+    fun observeOpeningBalance(id: Long): Flow<Long> = ledger.observeOpeningBalance(id)
+
     suspend fun get(id: Long): Customer? = customers.byId(id)
+
+    /**
+     * ثبت یا اصلاح ماندهٔ ابتدای استفاده از اپ.
+     * به‌جای تغییر سابقه، اختلاف به‌صورت یک رویداد دفتر ثبت می‌شود تا تاریخچه حفظ شود.
+     */
+    suspend fun setOpeningBalance(customerId: Long, targetRial: Long, epochDay: Long) {
+        val currentRial = ledger.openingBalance(customerId)
+        val deltaRial = try {
+            Math.subtractExact(targetRial, currentRial)
+        } catch (_: ArithmeticException) {
+            error("مبلغ مانده از حد مجاز بیشتر است")
+        }
+        if (deltaRial == 0L) return
+        if (deltaRial == Long.MIN_VALUE) error("مبلغ مانده از حد مجاز بیشتر است")
+
+        ledger.insert(
+            LedgerEntry(
+                customerId = customerId,
+                atEpochDay = epochDay,
+                direction = if (deltaRial > 0) ir.cmbtools.ledger.core.LedgerDirection.DEBIT else ir.cmbtools.ledger.core.LedgerDirection.CREDIT,
+                amountRial = kotlin.math.abs(deltaRial),
+                account = ir.cmbtools.ledger.core.LedgerAccount.ADJUSTMENT,
+                refType = "OPENING_BALANCE",
+                memo = if (currentRial == 0L) "مانده از قبل" else "اصلاح مانده از قبل"
+            )
+        )
+    }
 
     suspend fun create(name: String, phone: String, cardLast4: String, note: String, creditLimitRial: Long): Long {
         require(name.isNotBlank()) { "نام مشتری الزامی است" }

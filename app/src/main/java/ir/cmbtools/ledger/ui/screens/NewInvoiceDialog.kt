@@ -40,10 +40,6 @@ import ir.cmbtools.ledger.ui.common.LabeledField
 import ir.cmbtools.ledger.ui.common.SectionCard
 import ir.cmbtools.ledger.ui.theme.TextMuted
 
-/** ۳۰.۰ → «۳۰»، ۲۵.۵ → «۲۵٫۵» */
-internal fun formatGb(gb: Double): String =
-    if (gb % 1.0 == 0.0) gb.toInt().toString() else gb.toString().replace('.', '٫')
-
 /**
  * فرم صدور فاکتور (+ ساخت اکانت در پنل).
  *
@@ -134,14 +130,14 @@ fun NewInvoiceDialog(
                         items = plans,
                         selected = selectedPlan,
                         itemLabel = { plan ->
-                            plan.name + " — " + Money.toPersian(formatGb(plan.gb)) + " گیگ / " +
+                            plan.name + " — " + Money.toPersian(plan.gb.toString()) + " گیگ / " +
                                 Money.toPersian(plan.days.toString()) + " روز / " + Money.format(plan.priceRial, withUnit = false)
                         },
                         onSelect = { applyPlan(it) }
                     )
                     selectedPlan?.let { plan ->
                         Text(
-                            Money.toPersian(formatGb(plan.gb)) + " گیگ • " +
+                            Money.toPersian(plan.gb.toString()) + " گیگ • " +
                                 Money.toPersian(plan.days.toString()) + " روز • " +
                                 Money.format(plan.priceRial),
                             color = TextMuted,

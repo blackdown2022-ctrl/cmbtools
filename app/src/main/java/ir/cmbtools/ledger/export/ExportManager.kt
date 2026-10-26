@@ -141,9 +141,7 @@ class ExportManager(
             panelAccounts = dao.allPanelAccounts(),
             bankSms = dao.allBankSms(),
             smsOutbox = dao.allOutbox(),
-            // Secret اتصال ربات هیچ‌وقت به فایل JSON پشتیبانِ بدون رمزگذاری صادر نمی‌شود.
-            // پس از بازیابی، اتصال ربات خاموش می‌ماند و Secret را باید دوباره وارد کرد.
-            settings = container.prefs.current.copy(botApiSecret = "", botPaymentEnabled = false),
+            settings = container.prefs.current,
             invoiceNumberHighWatermark = maxOf(
                 container.db.invoiceNumberCounter().lastNumber() ?: 0L,
                 container.db.invoiceNumberCounter().maximumInvoiceNumber()
@@ -170,10 +168,7 @@ class ExportManager(
                     // ولی اگر فایل قدیمی این فیلدها را نداشت، مقدار فعلی حفظ می‌شود.
                     saved.copy(
                         lockPin = saved.lockPin.ifBlank { current.lockPin },
-                        lockEnabled = saved.lockEnabled,
-                        // حتی اگر پشتیبان قدیمی Secret ربات داشته باشد، از فایل وارد نمی‌کنیم.
-                        botApiSecret = current.botApiSecret,
-                        botPaymentEnabled = false
+                        lockEnabled = saved.lockEnabled
                     )
                 }
             }

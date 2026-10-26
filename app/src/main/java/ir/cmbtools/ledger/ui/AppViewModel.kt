@@ -31,8 +31,6 @@ import ir.cmbtools.ledger.data.Plan
 import ir.cmbtools.ledger.data.SmsOutbox
 import ir.cmbtools.ledger.panel.PanelConnection
 import ir.cmbtools.ledger.panel.PanelException
-import ir.cmbtools.ledger.sms.BotPaymentClient
-import ir.cmbtools.ledger.sms.BotPaymentResult
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.sms.SmsTemplate
 import ir.cmbtools.ledger.sync.AutoSyncController
@@ -100,9 +98,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** پیشرفت کارهای طولانی (همگام‌سازی/ساخت کاربر) برای نمایش متن مرحله */
     private val _busyText = MutableStateFlow("")
     val busyText: StateFlow<String> = _busyText.asStateFlow()
-
-    private val _botConnectionResult = MutableStateFlow<BotPaymentResult?>(null)
-    val botConnectionResult: StateFlow<BotPaymentResult?> = _botConnectionResult.asStateFlow()
 
     private val _navIntent = MutableStateFlow<String?>(null)
     val navIntent: StateFlow<String?> = _navIntent.asStateFlow()
@@ -772,56 +767,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateSettings(transform: (AppSettings) -> AppSettings) {
         c.prefs.update(transform)
-    }
-
-    fun saveBotConnection(serverUrl: String, apiSecret: String) {
-        val normalized = BotPaymentClient.normalizeConfirmUrl(serverUrl)
-        if (normalized == null) {
-            failure("آدرس باید HTTPS و ریشهٔ سرور یا مسیر استاندارد confirm باشد")
-            return
-        }
-        val secret = apiSecret.trim()
-        if (secret.length < 32) {
-            failure("Secret کوتاه یا خالی است؛ Secret کامل سرور را وارد کنید")
-            return
-        }
-        updateSettings { it.copy(botServerUrl = normalized, botApiSecret = secret) }
-        success("تنظیمات ربات در فضای رمزگذاری‌شده ذخیره شد")
-    }
-
-    fun setBotPaymentEnabled(enabled: Boolean) {
-        val current = settings.value
-        if (enabled && (BotPaymentClient.normalizeConfirmUrl(current.botServerUrl) == null || current.botApiSecret.length < 32)) {
-            failure("ابتدا آدرس و Secret را ذخیره و اتصال را آزمایش کنید")
-            return
-        }
-        updateSettings { it.copy(botPaymentEnabled = enabled) }
-        success(if (enabled) "ارسال واریزهای واجدشرایط به ربات روشن شد" else "اتصال ربات خاموش شد")
-    }
-
-    fun clearBotConnectionResult() {
-        _botConnectionResult.value = null
-    }
-
-    fun testBotConnection(serverUrl: String, apiSecret: String) = viewModelScope.launch {
-        _busy.value = true
-        _busyText.value = "در حال آزمایش اتصال امن به سرور ربات…"
-        try {
-            val result = c.botPaymentClient.testConnection(serverUrl, apiSecret.trim())
-            _botConnectionResult.value = result
-            if (result.ok) {
-                success("${result.message}${if (result.version.isNotBlank()) " (نسخه ${result.version})" else ""}")
-            } else {
-                failure(result.message)
-            }
-        } catch (e: Exception) {
-            val result = BotPaymentResult(false, "آزمایش اتصال ناموفق بود: ${e.message ?: "خطای ناشناخته"}", retryable = true)
-            _botConnectionResult.value = result
-            failure(result.message)
-        } finally {
-            _busy.value = false
-            _busyText.value = ""
-        }
     }
 
     fun setSmsMode(mode: String) = updateSettings { it.copy(smsMode = mode) }

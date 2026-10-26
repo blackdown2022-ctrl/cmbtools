@@ -59,6 +59,25 @@ data class HttpResult(
     /** خطای ۴۰۴ معمولی (مسیر در این نسخه وجود ندارد). */
     val isNotFound: Boolean get() = code == 404 && !isEmptyUserList
 
+    /**
+     * «این مسیر در این نسخهٔ پنل وجود ندارد» — مهم‌ترین تشخیص برای سازگاری نسخه‌ها.
+     *
+     * چرا فقط کد ۴۰۴ کافی نیست؟ در نسخه‌های ۱۱ تا ۱۳ فایل
+     * `hiddifypanel/panel/common.py` یک `@app.errorhandler(Exception)` دارد که هر خطای
+     * مسیرِ API را — به‌جای ۴۰۴ — با **کد ۵۰۰** و بدنهٔ
+     * `{"msg": "404 Not Found: The requested URL was not found on the server..."}`
+     * برمی‌گرداند. اگر این حالت را «خطای سرور» بشماریم، پنل سالم هم قرمز می‌شود.
+     *
+     * ۴۰۵ هم یعنی متد/مسیر در این نسخه پشتیبانی نمی‌شود.
+     */
+    val isMissingRoute: Boolean
+        get() = isNotFound || code == 405 ||
+            (code in 500..599 && (
+                body.contains("404 Not Found", ignoreCase = true) ||
+                    body.contains("not found on the server", ignoreCase = true) ||
+                    body.contains("The requested URL was not found", ignoreCase = true)
+                ))
+
     fun short(): String = body.trim().replace("\n", " ").take(160)
 }
 

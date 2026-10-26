@@ -30,6 +30,12 @@ internal object PanelJson {
         coerceInputValues = true
     }
 
+    // نکتهٔ مهم برای بدنهٔ درخواست‌ها:
+    // با این تنظیم (`explicitNulls = false`) مقدار `JsonNull` از بدنه حذف می‌شود. برای
+    // نمونه تمدید در نسخه‌های ۱۱–۱۴ با `"start_date": null` انجام می‌شود؛ اگر کلید
+    // فرستاده نشود، پنل تاریخ قبلی را نگه می‌دارد و اکانت تمدید نمی‌شود. بنابراین
+    // بدنه‌ها با `JsonObject.toString()` ساخته می‌شوند (تنظیمات پیش‌فرض ⇒ null نوشته می‌شود).
+
     private fun <T> decode(deserializer: kotlinx.serialization.DeserializationStrategy<T>, text: String): T =
         lenient.decodeFromString(deserializer, text)
 
@@ -74,7 +80,12 @@ internal object PanelJson {
         val text = runCatching {
             val obj = decode(JsonElement.serializer(), body) as? JsonObject ?: return@runCatching ""
             val msg = obj["msg"] ?: obj["detail"] ?: obj["message"] ?: obj["error"]
-            (msg as? JsonPrimitive)?.takeIf { it.isString }?.content ?: ""
+            when (msg) {
+                is JsonPrimitive -> msg.takeIf { it.isString }?.content ?: ""
+                // خطای اعتبارسنجی marshmallow: {"detail": {"json": {"field": ["Unknown field."]}}}
+                null -> ""
+                else -> msg.toString()
+            }
         }.getOrDefault("")
         // اگر بدنه HTML صفحهٔ لاگین بود، چیز مفیدی برای کاربر ندارد
         return text.trim().take(180)

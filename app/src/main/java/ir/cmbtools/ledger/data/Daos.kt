@@ -207,6 +207,23 @@ interface LedgerDao {
     )
     suspend fun balance(customerId: Long): Long
 
+    /** مانده‌ای که به‌عنوان حساب قبلی خارج از اپ ثبت شده است. */
+    @Query(
+        """
+        SELECT COALESCE(SUM(CASE WHEN direction = 'DEBIT' THEN amountRial ELSE -amountRial END), 0)
+        FROM ledger_entries WHERE customerId = :customerId AND refType = 'OPENING_BALANCE'
+        """
+    )
+    fun observeOpeningBalance(customerId: Long): Flow<Long>
+
+    @Query(
+        """
+        SELECT COALESCE(SUM(CASE WHEN direction = 'DEBIT' THEN amountRial ELSE -amountRial END), 0)
+        FROM ledger_entries WHERE customerId = :customerId AND refType = 'OPENING_BALANCE'
+        """
+    )
+    suspend fun openingBalance(customerId: Long): Long
+
     @Query(
         """
         SELECT customerId, COALESCE(SUM(CASE WHEN direction = 'DEBIT' THEN amountRial ELSE -amountRial END), 0) AS balanceRial

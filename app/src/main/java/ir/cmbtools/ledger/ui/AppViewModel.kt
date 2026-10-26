@@ -169,6 +169,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun customerFlow(id: Long): Flow<Customer?> = c.customers.observeById(id)
     fun customerBalance(id: Long): Flow<Long> = c.customers.observeBalance(id)
+    fun customerOpeningBalance(id: Long): Flow<Long> = c.customers.observeOpeningBalance(id)
     fun customerInvoices(id: Long): Flow<List<Invoice>> = c.invoices.observeByCustomer(id)
     fun customerPayments(id: Long): Flow<List<Payment>> = c.payments.observeByCustomer(id)
     fun customerLedger(id: Long): Flow<List<LedgerEntry>> = c.payments.observeLedger(id)
@@ -233,6 +234,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         runCatching { c.customers.archive(id) }
             .onSuccess { success("مشتری بایگانی شد") }
             .onFailure { failure(it.message ?: "خطا") }
+    }
+
+    fun setCustomerOpeningBalance(customerId: Long, balanceRial: Long, onDone: () -> Unit = {}) = viewModelScope.launch {
+        runCatching {
+            c.db.withTransaction {
+                c.customers.setOpeningBalance(customerId, balanceRial, LocalDate.now().toEpochDay())
+            }
+        }.onSuccess {
+            success("ماندهٔ قبلی ذخیره شد")
+            onDone()
+        }.onFailure { failure(it.message ?: "خطا در ذخیرهٔ ماندهٔ قبلی") }
     }
 
     fun adjustBalance(customerId: Long, deltaRial: Long, memo: String, date: LocalDate) = viewModelScope.launch {

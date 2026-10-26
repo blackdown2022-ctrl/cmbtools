@@ -67,6 +67,7 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
     // حالا با remember فقط یک بار ساخته می‌شوند.
     val customerFlow = remember(customerId) { vm.customerFlow(customerId) }
     val balanceFlow = remember(customerId) { vm.customerBalance(customerId) }
+    val openingBalanceFlow = remember(customerId) { vm.customerOpeningBalance(customerId) }
     val invoicesFlow = remember(customerId) { vm.customerInvoices(customerId) }
     val paymentsFlow = remember(customerId) { vm.customerPayments(customerId) }
     val ledgerFlow = remember(customerId) { vm.customerLedger(customerId) }
@@ -74,6 +75,7 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
 
     val customer by customerFlow.collectAsStateWithLifecycle(initialValue = null)
     val balance by balanceFlow.collectAsStateWithLifecycle(initialValue = 0L)
+    val openingBalance by openingBalanceFlow.collectAsStateWithLifecycle(initialValue = 0L)
     val invoices by invoicesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val payments by paymentsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val ledger by ledgerFlow.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -84,6 +86,7 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
     var showEdit by remember { mutableStateOf(false) }
     var showPayment by remember { mutableStateOf(false) }
     var showAdjust by remember { mutableStateOf(false) }
+    var showOpeningBalance by remember { mutableStateOf(false) }
     // تمدید: می‌تواند از دکمهٔ بالای صفحه (اولین اکانت) یا از دکمهٔ هر اکانت در تب «پنل» باز شود
     var renewTarget by remember { mutableStateOf<ir.cmbtools.ledger.data.PanelAccount?>(null) }
 
@@ -141,6 +144,34 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
                                 "تا " + Jalali.formatEpochDay(acc.expireEpochDay),
                                 color = TextMuted, style = MaterialTheme.typography.labelMedium
                             )
+                        }
+                    }
+                }
+            }
+
+            item {
+                SectionCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("مانده از قبل", color = TextMuted, style = MaterialTheme.typography.labelMedium)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                Money.format(openingBalance),
+                                color = if (openingBalance > 0) AccentAmber else AccentGreen,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "حساب خارج از اپ پیش از شروع ثبت",
+                                color = TextMuted,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                        OutlinedButton(onClick = { showOpeningBalance = true }) {
+                            Text("ویرایش")
                         }
                     }
                 }
@@ -330,6 +361,14 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
         }
     }
 
+    if (showOpeningBalance) {
+        OpeningBalanceDialog(
+            vm = vm,
+            customerId = customerId,
+            initialBalanceRial = openingBalance,
+            onDismiss = { showOpeningBalance = false }
+        )
+    }
     if (showEdit && customer != null) {
         CustomerEditorDialog(vm = vm, existing = customer, onDismiss = { showEdit = false }, onSaved = { showEdit = false })
     }
@@ -466,6 +505,49 @@ fun PaymentDialog(
                     onDismiss()
                 }
             ) { Text("ثبت") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("انصراف") } }
+    )
+}
+
+@Composable
+private fun OpeningBalanceDialog(
+    vm: AppViewModel,
+    customerId: Long,
+    initialBalanceRial: Long,
+    onDismiss: () -> Unit
+) {
+    var isDebtor by remember { mutableStateOf(initialBalanceRial >= 0L) }
+    var amount by remember {
+        mutableStateOf(if (initialBalanceRial == Long.MIN_VALUE) Long.MAX_VALUE else kotlin.math.abs(initialBalanceRial))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("مانده از قبل") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "حساب مشتری قبل از شروع ثبت در اپ را وارد کنید. اصلاح این مبلغ، سوابق دفتر را پاک نمی‌کند.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                AmountField("مبلغ (ریال)", amount, { amount = it })
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { isDebtor = true }, modifier = Modifier.weight(1f)) {
+                        Text(if (isDebtor) "بدهکار ✓" else "بدهکار")
+                    }
+                    OutlinedButton(onClick = { isDebtor = false }, modifier = Modifier.weight(1f)) {
+                        Text(if (!isDebtor) "بستانکار ✓" else "بستانکار")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val signedBalance = if (isDebtor) amount else -amount
+                vm.setCustomerOpeningBalance(customerId, signedBalance, onDismiss)
+            }) { Text("ذخیره") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("انصراف") } }
     )

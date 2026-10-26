@@ -375,7 +375,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** تمدید اکانت موجود + صدور فاکتور تمدید */
+    /**
+     * تمدید اکانت موجود + صدور فاکتور تمدید.
+     *
+     * تمدید = ریست کردن حجم و روز (مصرف صفر، start_date پاک، سقف حجم/روز جدید)،
+     * یعنی همان کاری که پنل با دکمهٔ تمدید انجام می‌دهد.
+     */
     fun renewAccount(
         customerId: Long,
         panelUuid: String,
@@ -417,7 +422,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     provision.subscriptionUrl
                 )
                 result = result.copy(
-                    message = "تمدید انجام شد (${provision.expireInDays} روز باقی‌مانده)",
+                    message = "تمدید انجام شد — حجم و روز ریست شد (${provision.expireInDays} روز باقی‌مانده)",
                     subscriptionUrl = provision.subscriptionUrl
                 )
             } catch (e: Exception) {

@@ -12,9 +12,17 @@ import ir.cmbtools.ledger.data.InvoiceLine
 /**
  * قالب فاکتور متنی + شمارش بخش‌های پیامک.
  * پیامک فارسی UCS-2 است: ۷۰ کاراکتر در بخش اول (با هدر ۶۷) و ۶۷ در بخش‌های بعدی.
+ *
+ * قانون متن پیامک فاکتور (خواستهٔ صریح):
+ *  • نام فروشگاه در پیامک نمی‌آید.
+ *  • لینک اشتراک در پیامک نمی‌آید.
+ *  • خط اول فقط نام مشتری است.
  */
 object SmsTemplate {
 
+    // پارامتر `subscriptionUrl` برای سازگاری با فراخوانی‌های موجود نگه داشته شده است،
+    // ولی طبق خواستهٔ کاربر دیگر در متن پیامک فاکتور درج نمی‌شود.
+    @Suppress("UNUSED_PARAMETER")
     fun render(
         settings: AppSettings,
         invoice: Invoice,
@@ -57,10 +65,10 @@ object SmsTemplate {
         val card = invoice.cardNumber.ifBlank { settings.paymentCardNumber }
         val cardLine = if (card.isBlank()) "" else card
 
-        val link = if (subscriptionUrl.isBlank()) "" else "لینک اشتراک:\n$subscriptionUrl"
-
         return settings.invoiceTemplate
-            .replace("{business}", settings.businessName)
+            // نام فروشگاه عمداً درج نمی‌شود (خواستهٔ کاربر: پیامک با نام مشتری شروع شود).
+            // متغیر برای سازگاری با قالب‌های قدیمی نگه داشته شده ولی خالی جایگزین می‌شود.
+            .replace("{business}", "")
             .replace("{invoiceNo}", Money.toPersian(invoice.number))
             .replace("{customer}", customer.name)
             .replace("{total}", amountText)
@@ -73,9 +81,39 @@ object SmsTemplate {
             .replace("{totalDebt}", Money.format(totalDebt.coerceAtLeast(0)))
             .replace("{debt}", debtBlock)
             .replace("{card}", cardLine)
-            .replace("{link}", link)
+            // لینک اشتراک هم در پیامک فاکتور نمی‌آید (فقط در بخش اکانت/کپی لینک)
+            .replace("{link}", "")
             .replace("{footer}", settings.invoiceFooter)
             .let { cleanup(it) }
+    }
+
+    /**
+     * پیش‌نمایش با دادهٔ نمونه — برای دیدن دقیق متن در تنظیمات، قبل از ذخیره.
+     * همان مسیر [render] را طی می‌کند تا هر تغییری در قالب، این‌جا هم دیده شود.
+     */
+    fun preview(
+        settings: AppSettings,
+        template: String = settings.invoiceTemplate,
+        footer: String = settings.invoiceFooter
+    ): String {
+        val sample = Invoice(
+            number = "1405-0042",
+            customerId = 0,
+            issuedAtEpochDay = java.time.LocalDate.now().toEpochDay(),
+            subtotalRial = 1_500_000,
+            totalRial = 1_500_000,
+            packageName = "یک‌ماهه ۳۰ گیگ",
+            cardNumber = settings.paymentCardNumber.ifBlank { "6037-9977-1234-5678" },
+            kind = InvoiceKind.NEW
+        )
+        val customer = Customer(id = 0, name = "علی رضایی", phone = "09120000000")
+        return render(
+            settings.copy(invoiceTemplate = template, invoiceFooter = footer),
+            sample,
+            customer,
+            emptyList(),
+            ""
+        )
     }
 
     /**
@@ -99,16 +137,15 @@ object SmsTemplate {
             Jalali.formatEpochDay(invoice.issuedAtEpochDay)
         }
 
-    /** یادآوری بدهی */
+    /** یادآوری بدهی — مثل پیامک فاکتور با نام مشتری شروع می‌شود (بدون نام فروشگاه) */
     fun renderReminder(settings: AppSettings, customer: Customer, balanceRial: Long, dueCount: Int): String =
-        "${settings.businessName}\n" +
-            "${customer.name} عزیز، ماندهٔ حساب شما ${Money.format(balanceRial)} است" +
+        "${customer.name} عزیز، ماندهٔ حساب شما ${Money.format(balanceRial)} است" +
             (if (dueCount > 0) " (${Money.toPersian(dueCount.toString())} فاکتور پرداخت‌نشده)." else ".") +
             "\nبا تشکر"
 
-    /** خوش‌آمد/ارسال اکانت بدون فاکتور */
+    /** خوش‌آمد/ارسال اکانت بدون فاکتور — این پیامک فقط برای رساندن لینک است */
     fun renderAccount(settings: AppSettings, customer: Customer, subscriptionUrl: String): String =
-        "${settings.businessName}\n${customer.name} عزیز، اکانت شما فعال شد:\n$subscriptionUrl"
+        "${customer.name} عزیز، اکانت شما فعال شد:\n$subscriptionUrl"
 
     fun isPersianUcs2(body: String): Boolean = body.any { it.code > 127 }
 

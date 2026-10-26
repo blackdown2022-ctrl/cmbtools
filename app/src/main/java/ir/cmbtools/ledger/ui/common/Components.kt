@@ -100,8 +100,14 @@ fun StatCard(
 fun SectionCard(
     title: String? = null,
     modifier: Modifier = Modifier,
+    /**
+     * برای صفحهٔ تنظیمات که هر سربرگ فقط بخش خودش را نشان می‌دهد.
+     * وقتی `false` باشد هیچ‌چیز ساخته نمی‌شود (کارِ تَب مخفی هم اجرا نمی‌شود).
+     */
+    visible: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    if (!visible) return
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),

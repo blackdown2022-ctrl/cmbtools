@@ -159,9 +159,18 @@ class PanelService(
         return PanelUrl.normalizeLinkBase(prefs.current.fallbackSubscriptionBase)
     }
 
-    /** تمدید دورهٔ جدید برای اکانت موجود مشتری */
+    /**
+     * **تمدید** دورهٔ جدید برای اکانت موجود مشتری.
+     *
+     * معنای تمدید (همان تعریف پنل): «روز» و «حجم» از نو تنظیم می‌شود:
+     *  • مصرف فعلی صفر می‌شود،
+     *  • `start_date` پاک می‌شود تا شمارش روز از اولین اتصال بعدی شروع شود،
+     *  • سقف حجم و تعداد روز برابر بستهٔ جدید می‌شود.
+     * این کار برای هر سه سبک API (۱۱ تا ۱۴) انجام می‌شود.
+     */
     suspend fun renew(uuid: String, gb: Double, days: Int): AccountProvisionResult {
         val user = client.renewPackage(uuid, gb, days)
+        val now = System.currentTimeMillis()
         val existing = panelDao.byPanelUuid(uuid)
         val url = existing?.subscriptionUrl?.takeIf { it.isNotBlank() }
             ?: client.subscriptionUrl(uuid, linkBaseForCurrent())
@@ -182,7 +191,8 @@ class PanelService(
                 subscriptionUrl = url,
                 prevExpireEpochDay = existing?.expireEpochDay ?: 0,
                 // فاکتور تمدید پیش از فراخوانی این متد صادر شده است
-                lastInvoicedExpireEpochDay = user.expireEpochDay
+                lastInvoicedExpireEpochDay = user.expireEpochDay,
+                lastRenewedAtMillis = now
             )
         )
         return AccountProvisionResult(

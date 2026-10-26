@@ -22,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         BankSms::class,
         SmsOutbox::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -88,9 +88,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * ۴ → ۵ : زمان آخرین تمدید هر اکانت پنل.
+         * ستون مقدار پیش‌فرض دارد؛ دادهٔ قبلی حفظ می‌شود (تا اولین تمدید بعدی خالی می‌ماند).
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE panel_accounts ADD COLUMN lastRenewedAtMillis INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "cmb-ledger.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .fallbackToDestructiveMigration()
                 .build()
     }

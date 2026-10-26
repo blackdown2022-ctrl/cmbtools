@@ -72,7 +72,10 @@ object BankSmsParser {
     private val amountFallback = Regex("""(?:مبلغ|به مبلغ|مبلغ:|واریز)\s*:?\s*([\d][\d,٬]{2,})""")
     private val balanceRegex = Regex("""موجودی[^\d]{0,12}([\d][\d,٬]{2,})""")
     private val cardRegex = Regex("""(?:کارت|حساب)[^\d]{0,20}(\d{4})""")
-    private val refRegex = Regex("""(?:پیگیری|مرجع|رسید|شماره سند)[^\d]{0,10}(\d{4,})""")
+    private val refRegex = Regex(
+        """(?:کد\s*(?:پیگیری|رهگیری|مرجع|تراکنش)|شماره\s*(?:پیگیری|رهگیری|مرجع|تراکنش|سند)|شناسه\s*(?:پیگیری|تراکنش)|پیگیری|رهگیری|مرجع|رسید|trace|ref)[^\d]{0,15}(\d{4,})""",
+        RegexOption.IGNORE_CASE
+    )
 
     fun detectBank(sender: String): String {
         val s = sender.lowercase().replace(" ", "")

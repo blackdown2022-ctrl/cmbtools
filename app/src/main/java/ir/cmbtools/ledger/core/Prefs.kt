@@ -119,9 +119,20 @@ object SmsGatewayProvider {
     }
 }
 
+data class BotPaymentAudit(
+    val atMillis: Long = 0L,
+    val state: String = "",
+    val bank: String = "",
+    val amountRial: Long = 0L,
+    val reference: String = "",
+    val orderId: String = "",
+    val message: String = "",
+    val httpStatus: Int = 0
+)
+
 /**
- * تنظیمات در EncryptedSharedPreferences ذخیره می‌شود (کلید API پنل و درگاه پیامک).
- * برای شخصی‌سازی: از Keystore استفاده می‌کند و کلیدها روی دستگاه رمز می‌مانند.
+ * تنظیمات و گزارش آخرین وضعیت ربات در EncryptedSharedPreferences ذخیره می‌شوند.
+ * برای شخصی‌سازی از Keystore استفاده می‌شود و کلیدها روی دستگاه رمز می‌مانند.
  */
 class Prefs(context: Context) {
 
@@ -139,6 +150,34 @@ class Prefs(context: Context) {
 
     private val _settings = MutableStateFlow(read())
     val settings: StateFlow<AppSettings> = _settings
+
+    private val _botAudit = MutableStateFlow(readBotAudit())
+    val botAudit: StateFlow<BotPaymentAudit> = _botAudit
+
+    private fun readBotAudit() = BotPaymentAudit(
+        atMillis = sp.getLong("botAuditAtMillis", 0L),
+        state = sp.getString("botAuditState", "") ?: "",
+        bank = sp.getString("botAuditBank", "") ?: "",
+        amountRial = sp.getLong("botAuditAmountRial", 0L),
+        reference = sp.getString("botAuditReference", "") ?: "",
+        orderId = sp.getString("botAuditOrderId", "") ?: "",
+        message = sp.getString("botAuditMessage", "") ?: "",
+        httpStatus = sp.getInt("botAuditHttpStatus", 0)
+    )
+
+    fun recordBotAudit(audit: BotPaymentAudit) {
+        sp.edit()
+            .putLong("botAuditAtMillis", audit.atMillis)
+            .putString("botAuditState", audit.state)
+            .putString("botAuditBank", audit.bank)
+            .putLong("botAuditAmountRial", audit.amountRial)
+            .putString("botAuditReference", audit.reference)
+            .putString("botAuditOrderId", audit.orderId)
+            .putString("botAuditMessage", audit.message)
+            .putInt("botAuditHttpStatus", audit.httpStatus)
+            .apply()
+        _botAudit.value = audit
+    }
 
     private fun read(): AppSettings {
         val defaults = AppSettings()

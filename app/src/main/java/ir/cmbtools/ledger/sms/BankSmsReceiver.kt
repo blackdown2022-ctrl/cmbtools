@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import ir.cmbtools.ledger.LedgerApp
+import ir.cmbtools.ledger.core.BotPaymentAudit
 import ir.cmbtools.ledger.core.Money
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,16 +41,35 @@ class BankSmsReceiver : BroadcastReceiver() {
                         if (settings.botPaymentEnabled) {
                             val parsed = BankSmsParser.parse(sender, body, time)
                             if (BotPaymentClient.isEligibleBankDeposit(parsed)) {
-                                BotPaymentWorker.enqueue(context, parsed.amountRial, parsed.refNo, parsed.bank)
-                            } else if (parsed.isCredit && !parsed.isOtp && !parsed.isReversal && parsed.amountRial > 0L) {
-                                app.notifications.show(
-                                    "واریز برای ربات ارسال نشد",
-                                    when {
-                                        parsed.refNo.isBlank() -> "کد پیگیری در پیامک پیدا نشد؛ تأیید خودکار امن نیست"
-                                        parsed.bank == "بانک ناشناس" -> "بانک پیامک شناخته نشد؛ این واریز به سرور ربات ارسال نشد"
-                                        else -> "این پیامک شرایط لازم برای تأیید خودکار را نداشت"
-                                    }
+                                val audit = BotPaymentAudit(
+                                    atMillis = time,
+                                    state = "pending",
+                                    bank = parsed.bank,
+                                    amountRial = parsed.amountRial,
+                                    reference = parsed.refNo,
+                                    message = "پیامک واجد شرایط است؛ درخواست در صف ارسال به سرور قرار گرفت"
                                 )
+                                app.container.prefs.recordBotAudit(audit)
+                                BotPaymentWorker.enqueue(context, parsed.amountRial, parsed.refNo, parsed.bank)
+                            } else if (!parsed.isOtp && parsed.amountRial > 0L && (parsed.isCredit || parsed.isReversal)) {
+                                val reason = when {
+                                    parsed.isReversal -> "پیامک برگشت وجه است؛ ارسال نشد"
+                                    parsed.amountRial % 10L != 0L -> "مبلغ به تومان دقیق تبدیل نمی‌شود"
+                                    parsed.refNo.isBlank() -> "کد پیگیری از متن پیامک استخراج نشد"
+                                    parsed.bank == "بانک ناشناس" -> "فرستنده به‌عنوان بانک شناخته نشد"
+                                    else -> "پیامک شرایط لازم برای تأیید را نداشت"
+                                }
+                                app.container.prefs.recordBotAudit(
+                                    BotPaymentAudit(
+                                        atMillis = time,
+                                        state = "skipped",
+                                        bank = parsed.bank,
+                                        amountRial = parsed.amountRial,
+                                        reference = if (parsed.isReversal) "" else parsed.refNo,
+                                        message = reason
+                                    )
+                                )
+                                app.notifications.show("واریز برای ربات ارسال نشد", reason)
                             }
                         }
                     }

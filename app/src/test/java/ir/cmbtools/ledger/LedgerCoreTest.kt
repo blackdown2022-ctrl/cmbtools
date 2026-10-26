@@ -484,18 +484,30 @@ class PanelCompatTest {
 
     @Test
     fun expire_is_computed_when_panel_does_not_send_it() {
-        // نسخه‌های ۱۱ تا ۱۳ فیلد expire_date ندارند
+        // نسخه‌های ۱۱ تا ۱۳ فیلد expire_date / remaining_days / status ندارند
+        val start = LocalDate.now().minusDays(10)
         val legacyRow = ir.cmbtools.ledger.panel.PanelUserDto(
             uuid = "u1",
             name = "ali",
             packageDays = 30,
-            startDate = "2026-01-01",
+            startDate = start.toString(),
             remainingDays = 0,
-            status = ""
+            status = "",
+            usageLimitGb = 30.0,
+            currentUsageGb = 3.0
         )
-        assertEquals(java.time.LocalDate.parse("2026-01-01").toEpochDay() + 30, legacyRow.expireEpochDay)
+        assertEquals(start.toEpochDay() + 30, legacyRow.expireEpochDay)
+        assertEquals(20, legacyRow.remainingDaysOrComputed)
         assertEquals("active", legacyRow.statusOrComputed)
 
+        // مصرف بیشتر از حجم → no_data
+        assertEquals("no_data", legacyRow.copy(currentUsageGb = 31.0).statusOrComputed)
+        // غیرفعال‌شده
+        assertEquals("disabled", legacyRow.copy(enable = false).statusOrComputed)
+        // تاریخ گذشته
+        assertEquals("expired", legacyRow.copy(startDate = LocalDate.now().minusDays(60).toString()).statusOrComputed)
+
+        // نسخهٔ ۱۴ این فیلدها را مستقیم می‌دهد
         val v14Row = ir.cmbtools.ledger.panel.PanelUserDto(
             uuid = "u2",
             name = "reza",
@@ -505,8 +517,9 @@ class PanelCompatTest {
             remainingDays = 5,
             status = "active"
         )
-        assertEquals(java.time.LocalDate.parse("2026-02-15").toEpochDay(), v14Row.expireEpochDay)
+        assertEquals(LocalDate.parse("2026-02-15").toEpochDay(), v14Row.expireEpochDay)
         assertEquals(5, v14Row.remainingDaysOrComputed)
+        assertEquals("active", v14Row.statusOrComputed)
     }
 
     @Test

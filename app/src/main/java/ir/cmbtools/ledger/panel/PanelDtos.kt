@@ -119,7 +119,7 @@ data class PanelUserDto(
             status.isNotBlank() -> status
             !enable -> "disabled"
             remainingDaysOrComputed < 0 -> "expired"
-            usageLimitGb in 0.0..currentUsageGb -> "no_data"
+            usageLimitGb > 0 && currentUsageGb >= usageLimitGb -> "no_data"
             else -> "active"
         }
 }

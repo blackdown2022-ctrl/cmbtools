@@ -225,6 +225,7 @@ class BotPaymentClient {
 
         fun isEligibleBankDeposit(parsed: ParsedBankSms): Boolean =
             parsed.isCredit && !parsed.isOtp && !parsed.isReversal && parsed.amountRial > 0L &&
-                parsed.amountRial % 10L == 0L && parsed.refNo.isNotBlank() && parsed.bank != "بانک ناشناس"
+                parsed.amountUnit in setOf("RIAL", "TOMAN") && parsed.amountRial % 10L == 0L &&
+                parsed.refNo.isNotBlank() && parsed.bank != "بانک ناشناس"
     }
 }

@@ -23,6 +23,8 @@ class LedgerApp : Application() {
             // شماره‌های قدیمی (فارسی/با فاصله/+98) یک‌بار به قالب 09xxxxxxxxx تبدیل می‌شوند
             // تا تطبیق با «یادداشت» کاربران پنل و پیامک بانکی دقیق باشد.
             runCatching { container.billing.normalizeStoredPhones() }
+            // پیامک‌های بی‌تطبیق با قواعد تازه دوباره خوانده می‌شوند؛ پرداخت‌های ثبت‌شده دست‌نخورده می‌مانند.
+            runCatching { container.matcher.refreshUnmatchedSmsParsing() }
         }
     }
 }

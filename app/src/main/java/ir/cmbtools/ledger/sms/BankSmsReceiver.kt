@@ -46,6 +46,7 @@ class BankSmsReceiver : BroadcastReceiver() {
                                     state = "pending",
                                     bank = parsed.bank,
                                     amountRial = parsed.amountRial,
+                                    amountUnit = parsed.amountUnit,
                                     reference = parsed.refNo,
                                     message = "پیامک واجد شرایط است؛ درخواست در صف ارسال به سرور قرار گرفت"
                                 )
@@ -54,6 +55,7 @@ class BankSmsReceiver : BroadcastReceiver() {
                             } else if (!parsed.isOtp && parsed.amountRial > 0L && (parsed.isCredit || parsed.isReversal)) {
                                 val reason = when {
                                     parsed.isReversal -> "پیامک برگشت وجه است؛ ارسال نشد"
+                                    parsed.amountUnit.startsWith("ASSUMED") -> "واحد ریال/تومان در SMS مشخص نیست؛ برای جلوگیری از مبلغ اشتباه ارسال نشد"
                                     parsed.amountRial % 10L != 0L -> "مبلغ به تومان دقیق تبدیل نمی‌شود"
                                     parsed.refNo.isBlank() -> "کد پیگیری از متن پیامک استخراج نشد"
                                     parsed.bank == "بانک ناشناس" -> "فرستنده به‌عنوان بانک شناخته نشد"
@@ -65,6 +67,7 @@ class BankSmsReceiver : BroadcastReceiver() {
                                         state = "skipped",
                                         bank = parsed.bank,
                                         amountRial = parsed.amountRial,
+                                        amountUnit = parsed.amountUnit,
                                         reference = if (parsed.isReversal) "" else parsed.refNo,
                                         message = reason
                                     )

@@ -4,7 +4,7 @@ import ir.cmbtools.ledger.core.Money
 
 /**
  * پارسر پیامک بانکی ایرانی.
- * فلسفه: «محافظه‌کار» — اگر مطمئن نیستیم واریز است، رد می‌کنیم تا پرداخت اشتباه ثبت نشود.
+ * amountRial برای سازگاری با دفتر محلی حفظ شده؛ amountUnit نشان می‌دهد تبدیل واحد قطعی بوده یا تخمینی.
  */
 data class ParsedBankSms(
     val bank: String,
@@ -15,12 +15,29 @@ data class ParsedBankSms(
     val isOtp: Boolean,
     val isReversal: Boolean,
     val refNo: String,
-    val reason: String = ""
+    val reason: String = "",
+    val amountRawValue: Long = 0L,
+    /** RIAL, TOMAN, ASSUMED_RIAL, ASSUMED_TOMAN, UNKNOWN */
+    val amountUnit: String = "UNKNOWN",
+    val amountAmbiguous: Boolean = false
 )
 
 object BankSmsParser {
 
     private data class BankPattern(val name: String, val senders: List<String>)
+    private data class AmountCandidate(
+        val raw: Long,
+        val unit: String,
+        val start: Int,
+        val end: Int,
+        val score: Int
+    )
+    private data class AmountExtraction(
+        val amountRial: Long,
+        val raw: Long,
+        val unit: String,
+        val ambiguous: Boolean = false
+    )
 
     private val banks = listOf(
         BankPattern("بانک ملی", listOf("bankmelli", "melli", "6104", "9830")),
@@ -67,15 +84,18 @@ object BankSmsParser {
     )
 
     private val reversalWords = listOf("برگشت", "کنسل", "لغو", "reverse", "عودت")
-
-    private val amountRegex = Regex("""([\d][\d,٬]{2,})\s*(?:ریال|ريال)""")
-    private val amountFallback = Regex("""(?:مبلغ|به مبلغ|مبلغ:|واریز)\s*:?\s*([\d][\d,٬]{2,})""")
+    private val explicitAmountRegex = Regex("""([\d][\d,٬]{2,})\s*(ریال|ريال|تومان|تومن)""")
+    private val labeledAmountRegex = Regex(
+        """(?:مبلغ(?:\s*(?:واریز|تراکنش))?|واریز(?:ی)?|دریافت|انتقال(?:\s*وجه)?)[^\d]{0,24}([\d][\d,٬]{2,})"""
+    )
     private val balanceRegex = Regex("""موجودی[^\d]{0,12}([\d][\d,٬]{2,})""")
     private val cardRegex = Regex("""(?:کارت|حساب)[^\d]{0,20}(\d{4})""")
     private val refRegex = Regex(
         """(?:کد\s*(?:پیگیری|رهگیری|مرجع|تراکنش)|شماره\s*(?:پیگیری|رهگیری|مرجع|تراکنش|سند)|شناسه\s*(?:پیگیری|تراکنش)|پیگیری|رهگیری|مرجع|رسید|trace|ref)[^\d]{0,15}(\d{4,})""",
         RegexOption.IGNORE_CASE
     )
+    private val transactionContext = listOf("مبلغ", "واریز", "واریزی", "دریافت", "تراکنش", "انتقال", "رسید")
+    private val balanceContext = listOf("موجودی", "مانده", "balance")
 
     fun detectBank(sender: String): String {
         val s = sender.lowercase().replace(" ", "")
@@ -93,16 +113,17 @@ object BankSmsParser {
         val hasCredit = creditWords.any { lower.contains(it.lowercase()) }
         val hasDebit = debitWords.any { lower.contains(it.lowercase()) }
 
-        val amount = extractAmount(normalized)
+        val extracted = extractAmount(normalized)
+        val amount = extracted?.amountRial ?: 0L
         val balance = balanceRegex.find(normalized)?.groupValues?.get(1)?.let { Money.parseRial(it) } ?: -1
         val last4 = cardRegex.find(normalized)?.groupValues?.get(1) ?: ""
         val refNo = refRegex.find(normalized)?.groupValues?.get(1) ?: ""
-
         val isCredit = !isOtp && hasCredit && !hasDebit
 
         val reason = when {
             isOtp -> "رمز پویا/کد تأیید"
-            amount == null || amount <= 0 -> "مبلغ پیدا نشد"
+            extracted?.ambiguous == true -> "چند مبلغ محتمل پیدا شد؛ مبلغ تراکنش مبهم است"
+            amount <= 0L -> "مبلغ تراکنش پیدا نشد"
             !isCredit -> "پیامک واریز نیست"
             isReversal -> "برگشت/کنسلی"
             else -> ""
@@ -110,35 +131,84 @@ object BankSmsParser {
 
         return ParsedBankSms(
             bank = bank,
-            amountRial = amount ?: 0,
+            amountRial = amount,
             last4 = last4,
             balanceRial = balance,
             isCredit = isCredit,
             isOtp = isOtp,
             isReversal = isReversal,
             refNo = refNo,
-            reason = reason
+            reason = reason,
+            amountRawValue = extracted?.raw ?: 0L,
+            amountUnit = extracted?.unit ?: "UNKNOWN",
+            amountAmbiguous = extracted?.ambiguous == true
         )
     }
 
-    private fun extractAmount(normalized: String): Long? {
-        // ۱) «مبلغ ۱٬۲۰۰٬۰۰۰ ریال» یا «۱۲٬۰۰۰ تومان» → واحد مهم است
-        val withUnit = Regex("""([\d][\d,٬]{2,})\s*(ریال|ريال|تومان|تومن)""").find(normalized)
-        if (withUnit != null) {
-            val value = Money.parseRial(withUnit.groupValues[1]) ?: return null
-            val unit = withUnit.groupValues[2]
-            return if (unit.contains("توم")) Money.tomanToRial(value) else value
+    /** Select by transaction context, not by whichever currency-formatted number appears first. */
+    private fun extractAmount(text: String): AmountExtraction? {
+        val candidates = mutableListOf<AmountCandidate>()
+        explicitAmountRegex.findAll(text).forEach { match ->
+            val raw = Money.parseRial(match.groupValues[1]) ?: return@forEach
+            val unitText = match.groupValues[2]
+            val unit = if (unitText.contains("توم")) "TOMAN" else "RIAL"
+            candidates += AmountCandidate(raw, unit, match.range.first, match.range.last + 1, contextScore(text, match.range.first))
         }
-        // ۲) بدون واحد: فرض می‌کنیم تومان است (رایج‌ترین حالت پیامک بانک‌های ایرانی)
-        val fallback = amountFallback.find(normalized) ?: amountRegex.find(normalized)
-        val value = fallback?.groupValues?.get(1)?.let { Money.parseRial(it) } ?: return null
-        return if (value < 1_000_000L) Money.tomanToRial(value) else value
+        labeledAmountRegex.findAll(text).forEach { match ->
+            val numberGroup = match.groups[1] ?: return@forEach
+            val raw = Money.parseRial(numberGroup.value) ?: return@forEach
+            // اگر این عدد قبلاً با واحد صریح پیدا شده، کاندیدای تخمینیِ تکراری نساز.
+            if (candidates.any { it.start == numberGroup.range.first }) return@forEach
+            candidates += AmountCandidate(raw, "UNKNOWN", numberGroup.range.first, numberGroup.range.last + 1, contextScore(text, numberGroup.range.first))
+        }
+
+        val viable = candidates.filter { it.score > -50 }
+        if (viable.isEmpty()) return null
+        val bestScore = viable.maxOf { it.score }
+        val best = viable.filter { it.score == bestScore }
+        val distinct = best.distinctBy { it.raw to it.unit }
+        if (distinct.size > 1) return AmountExtraction(0L, 0L, "UNKNOWN", ambiguous = true)
+
+        val chosen = distinct.first()
+        val amountRial: Long
+        val unit: String
+        when (chosen.unit) {
+            "RIAL" -> { amountRial = chosen.raw; unit = "RIAL" }
+            "TOMAN" -> {
+                amountRial = runCatching { Math.multiplyExact(chosen.raw, 10L) }.getOrNull() ?: return null
+                unit = "TOMAN"
+            }
+            else -> {
+                // حفظ تخمین قدیمی برای نمایش/دفتر محلی؛ ولی ربات این واحد نامعلوم را خودکار نمی‌فرستد.
+                if (chosen.raw < 1_000_000L) {
+                    amountRial = runCatching { Math.multiplyExact(chosen.raw, 10L) }.getOrNull() ?: return null
+                    unit = "ASSUMED_TOMAN"
+                } else {
+                    amountRial = chosen.raw
+                    unit = "ASSUMED_RIAL"
+                }
+            }
+        }
+        return AmountExtraction(amountRial, chosen.raw, unit)
+    }
+
+    private fun contextScore(text: String, numberStart: Int): Int {
+        val start = (numberStart - 36).coerceAtLeast(0)
+        val prefix = text.substring(start, numberStart).lowercase()
+        val lastTransaction = transactionContext.map { prefix.lastIndexOf(it) }.maxOrNull() ?: -1
+        val lastBalance = balanceContext.map { prefix.lastIndexOf(it) }.maxOrNull() ?: -1
+        val lastCard = listOf("کارت", "شماره حساب", "شماره کارت").map { prefix.lastIndexOf(it) }.maxOrNull() ?: -1
+        return when {
+            lastBalance > lastTransaction -> -100
+            lastCard > lastTransaction -> -75
+            lastTransaction >= 0 -> 100 + lastTransaction
+            else -> 0
+        }
     }
 
     /**
      * نرمال‌سازی متن پیامک: ارقام لاتین، «ی/ک» فارسی، فاصلهٔ یکسان.
-     * نکته: از Money.toLatinDigits استفاده نمی‌کنیم چون آن تابع فاصله‌ها را حذف می‌کند و
-     * عبارت‌های چندکلمه‌ای مثل «رمز پویا» یا «به حساب شما» دیگر پیدا نمی‌شدند.
+     * از Money.toLatinDigits استفاده نمی‌شود چون فاصله‌های عبارت‌های چندکلمه‌ای را حذف می‌کند.
      */
     private fun normalize(body: String): String {
         val sb = StringBuilder(body.length)

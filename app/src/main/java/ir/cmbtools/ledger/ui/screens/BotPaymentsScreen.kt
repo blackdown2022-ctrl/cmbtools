@@ -188,6 +188,7 @@ private fun BotStatusTab(
             Text(auditStateLabel(audit.state), color = auditColor(audit.state), fontWeight = FontWeight.Bold)
             Text(audit.message)
             if (audit.amountRial > 0L) Text("مبلغ خوانده‌شده: ${Money.format(audit.amountRial)} (${Money.format(audit.amountRial / 10L, withUnit = false)} تومان)")
+            if (audit.amountUnit.isNotBlank()) Text("واحد مبلغ: ${amountUnitLabel(audit.amountUnit)}", color = if (audit.amountUnit.startsWith("ASSUMED")) AccentAmber else TextMuted)
             if (audit.bank.isNotBlank()) Text("بانک تشخیص‌داده‌شده: ${audit.bank}", color = TextMuted)
             if (audit.reference.isNotBlank()) Text("${if (audit.state == "skipped") "کد پیگیریِ خوانده‌شده" else "کد پیگیریِ ارسال‌شده"}: ${audit.reference}", color = TextMuted)
             if (audit.orderId.isNotBlank()) Text("شناسهٔ سفارش پاسخ‌داده‌شده: ${audit.orderId}", color = TextMuted)
@@ -276,7 +277,8 @@ private fun BotTestsTab(
                 val eligible = BankSmsParserEligibility.isEligible(parsed)
                 Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                     Text("${sms.bank.ifBlank { parsed.bank }} • ${Money.format(parsed.amountRial)}", fontWeight = FontWeight.SemiBold)
-                    Text("مبلغی که اپ به ربات می‌فرستد: ${if (parsed.amountRial > 0L && parsed.amountRial % 10L == 0L) Money.format(parsed.amountRial / 10L, withUnit = false) + " تومان" else "نامشخص/غیرقابل تبدیل دقیق"}", color = TextMuted)
+                    Text("واحد در پیامک: ${amountUnitLabel(parsed.amountUnit)}", color = if (parsed.amountUnit.startsWith("ASSUMED")) AccentAmber else TextMuted)
+                    Text("${if (parsed.amountUnit.startsWith("ASSUMED")) "تخمین محلی؛ ارسال نخواهد شد" else "مبلغ ارسالیِ محاسبه‌شده"}: ${if (parsed.amountRial > 0L && parsed.amountRial % 10L == 0L) Money.format(parsed.amountRial / 10L, withUnit = false) + " تومان" else "نامشخص/غیرقابل تبدیل دقیق"}", color = if (parsed.amountUnit.startsWith("ASSUMED")) AccentAmber else TextMuted)
                     Text("کد پیگیری parser: ${parsed.refNo.ifBlank { "پیدا نشد" }}", color = TextMuted)
                     Text("نتیجه: ${eligibilityReason(parsed, eligible)}", color = if (eligible) AccentGreen else AccentAmber)
                     Text("ثبت‌شده: ${Jalali.formatDateTime(sms.receivedAtMillis)}", color = TextMuted, style = MaterialTheme.typography.labelSmall)
@@ -297,6 +299,7 @@ private fun eligibilityReason(parsed: ir.cmbtools.ledger.sms.ParsedBankSms, elig
     parsed.isReversal -> "برگشت وجه است؛ ارسال نمی‌شود"
     !parsed.isCredit -> "واریز اعتباری تشخیص داده نشد: ${parsed.reason.ifBlank { "الگوی پیامک بانک پشتیبانی/تشخیص داده نشد" }}"
     parsed.amountRial <= 0L -> "مبلغ معتبر پیدا نشد"
+    parsed.amountUnit.startsWith("ASSUMED") -> "واحد ریال/تومان در SMS مشخص نیست؛ تأیید خودکار ایمن نیست"
     parsed.amountRial % 10L != 0L -> "مبلغ به تومان دقیق تبدیل نمی‌شود"
     parsed.refNo.isBlank() -> "کد پیگیری با الگوی فعلی استخراج نشد"
     parsed.bank == "بانک ناشناس" -> "فرستندهٔ SMS در فهرست بانک‌های پشتیبانی‌شده نیست"
@@ -312,6 +315,14 @@ private fun normalizeOrderIdInput(value: String): String = buildString {
         }
         if (ascii.isLetterOrDigit() && ascii.code < 128 || ascii == '_' || ascii == '-') append(ascii)
     }
+}
+
+private fun amountUnitLabel(unit: String) = when (unit) {
+    "RIAL" -> "ریال صریح در متن پیامک"
+    "TOMAN" -> "تومان صریح در متن پیامک"
+    "ASSUMED_RIAL" -> "ریال حدس‌زده‌شده؛ واحد در SMS نبود"
+    "ASSUMED_TOMAN" -> "تومان حدس‌زده‌شده؛ واحد در SMS نبود"
+    else -> "نامشخص"
 }
 
 private fun auditStateLabel(state: String) = when (state) {

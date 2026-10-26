@@ -97,6 +97,42 @@ class BankSmsParserTest {
     }
 
     @Test
+    fun parses_postbank_credit_line_separately_from_balance() {
+        val body = """پست بانک
+
+واريز به کارت: 2972
+
++1,006,320
+
+1405/08/4
+
+19:51
+
+مانده: 7,425,882 ريال"""
+        val parsed = BankSmsParser.parse("unknown", body, 0)
+
+        assertEquals("پست بانک", parsed.bank)
+        assertEquals(1_006_320L, parsed.amountRial)
+        assertEquals(7_425_882L, parsed.balanceRial)
+        assertEquals("2972", parsed.last4)
+        assertTrue(parsed.isCredit)
+    }
+
+    @Test
+    fun postbank_balance_is_never_used_when_credit_line_is_not_seven_digits() {
+        val body = """پست بانک
+واريز به کارت: 2972
++100632
+1405/08/4
+19:51
+مانده: 7,425,882 ريال"""
+        val parsed = BankSmsParser.parse("postbank", body, 0)
+
+        assertEquals(0L, parsed.amountRial)
+        assertEquals(7_425_882L, parsed.balanceRial)
+    }
+
+    @Test
     fun assumes_toman_when_unit_missing() {
         val body = "واریز ۵۰۰٬۰۰۰ به حساب شما"
         val parsed = BankSmsParser.parse("9999", body, 0)

@@ -70,7 +70,9 @@ object BankSmsParser {
 
     private val amountRegex = Regex("""([\d][\d,٬]{2,})\s*(?:ریال|ريال)""")
     private val amountFallback = Regex("""(?:مبلغ|به مبلغ|مبلغ:|واریز)\s*:?\s*([\d][\d,٬]{2,})""")
-    private val balanceRegex = Regex("""موجودی[^\d]{0,12}([\d][\d,٬]{2,})""")
+    private val balanceRegex = Regex("""(?:موجودی|مانده)[^\d]{0,12}([\d][\d,٬]{2,})""")
+    private val postBankCardLine = Regex("""واریز\s+به\s+کارت\s*[:：]?\s*\d{4}""")
+    private val postBankAmountLine = Regex("""^\+\s*([\d,٬]+)\s*$""")
     private val cardRegex = Regex("""(?:کارت|حساب)[^\d]{0,20}(\d{4})""")
     private val refRegex = Regex("""(?:پیگیری|مرجع|رسید|شماره سند)[^\d]{0,10}(\d{4,})""")
 
@@ -83,14 +85,18 @@ object BankSmsParser {
     fun parse(sender: String, body: String, receivedAtMillis: Long): ParsedBankSms {
         val normalized = normalize(body)
         val lower = normalized.lowercase()
-        val bank = detectBank(sender)
+        val detectedBank = detectBank(sender)
+        val isPostBank = detectedBank == "پست بانک" || lower.contains("پست بانک")
+        val bank = if (isPostBank) "پست بانک" else detectedBank
 
         val isOtp = otpWords.any { lower.contains(it.lowercase()) }
         val isReversal = reversalWords.any { lower.contains(it.lowercase()) }
         val hasCredit = creditWords.any { lower.contains(it.lowercase()) }
         val hasDebit = debitWords.any { lower.contains(it.lowercase()) }
 
-        val amount = extractAmount(normalized)
+        // پست‌بانک مبلغ را در خط مستقلِ مثبت («+1,006,320») می‌فرستد و ماندهٔ حساب
+        // را بعدتر با واحد ریال درج می‌کند. هرگز برای این قالب از عددِ مانده به‌عنوان مبلغ استفاده نکن.
+        val amount = if (isPostBank) extractPostBankAmount(body) else extractAmount(normalized)
         val balance = balanceRegex.find(normalized)?.groupValues?.get(1)?.let { Money.parseRial(it) } ?: -1
         val last4 = cardRegex.find(normalized)?.groupValues?.get(1) ?: ""
         val refNo = refRegex.find(normalized)?.groupValues?.get(1) ?: ""
@@ -116,6 +122,21 @@ object BankSmsParser {
             refNo = refNo,
             reason = reason
         )
+    }
+
+    /**
+     * پست‌بانک: مبلغ واریز فقط عدد مثبتِ هفت‌رقمیِ خط بعد از «واریز به کارت: ۱۲۳۴» است.
+     * اعدادِ تاریخ، ساعت و «مانده» عمداً در استخراج مبلغ بررسی نمی‌شوند.
+     */
+    private fun extractPostBankAmount(body: String): Long? {
+        val lines = body.replace("\r", "").split('\n').map { normalize(it) }
+        val cardLineIndex = lines.indexOfFirst { postBankCardLine.containsMatchIn(it) }
+        if (cardLineIndex < 0) return null
+        val amountLine = lines.drop(cardLineIndex + 1).firstOrNull { it.isNotBlank() } ?: return null
+        val amountText = postBankAmountLine.matchEntire(amountLine)?.groupValues?.get(1) ?: return null
+        val digits = Money.toLatinDigits(amountText).filter { it.isDigit() }
+        if (digits.length != 7) return null
+        return Money.parseRial(amountText)
     }
 
     private fun extractAmount(normalized: String): Long? {

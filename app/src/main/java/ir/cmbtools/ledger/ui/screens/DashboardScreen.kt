@@ -66,7 +66,7 @@ fun DashboardScreen(vm: AppViewModel, nav: NavHostController) {
             subtitle = Jalali.formatLong(java.time.LocalDate.now().toEpochDay()) + " • " + Jalali.weekdayName(Jalali.today()),
             action = {
                 IconButton(onClick = { nav.navigate("settings") }) {
-                    Icon(Icons.Default.Settings, contentDescription = "تنظیمات", tint = Color.White)
+                    Icon(Icons.Default.Settings, contentDescription = "تنظیمات", tint = MaterialTheme.colorScheme.onPrimaryContainer)
                 }
             }
         )
@@ -141,12 +141,12 @@ fun DashboardScreen(vm: AppViewModel, nav: NavHostController) {
                                             .height((96 * ratio).dp)
                                             .background(
                                                 if (point.amountRial > 0) PrimaryCyan.copy(alpha = 0.75f)
-                                                else Color.White.copy(alpha = 0.06f),
+                                                else MaterialTheme.colorScheme.outlineVariant,
                                                 RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp)
                                             )
                                     )
                                     Spacer(Modifier.height(4.dp))
-                                    Text(point.label, fontSize = 8.sp, color = TextMuted)
+                                    Text(point.label, fontSize = 10.sp, color = TextMuted)
                                 }
                             }
                         }

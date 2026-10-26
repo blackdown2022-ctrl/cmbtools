@@ -200,11 +200,14 @@ class PanelClient(
         val api = service(c)
         val path = proxyPath(c)
 
-        val infoText = api.panelInfo(path, c.apiKey).use { it.string() }
-        val version = runCatching {
-            PanelJson.lenient.decodeFromString(PanelInfoDto.serializer(), infoText)
-                .let { it.version.ifBlank { it.panelVersion ?: "" } }
-        }.getOrDefault("")
+        // نسخهٔ پنل «خوب است بدانیم» است؛ اگر این مسیر در نسخه‌ای نبود، اتصال را رد نمی‌کنیم.
+        val infoText = runCatching { api.panelInfo(path, c.apiKey).use { it.string() } }.getOrNull()
+        val version = infoText?.let {
+            runCatching {
+                PanelJson.lenient.decodeFromString(PanelInfoDto.serializer(), it)
+                    .let { dto -> dto.version.ifBlank { dto.panelVersion ?: "" } }
+            }.getOrDefault("")
+        } ?: ""
 
         val (users, meta, endpoint) = fetchUsersInternal(api, path, c.apiKey)
 

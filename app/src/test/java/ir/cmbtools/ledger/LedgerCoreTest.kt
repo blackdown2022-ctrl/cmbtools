@@ -225,7 +225,8 @@ class InvoiceTemplateTest {
     fun renders_required_invoice_fields() {
         val body = SmsTemplate.render(AppSettings(), invoice(), customer, emptyList(), "")
         assertTrue(body.contains("علی رضایی"))
-        assertTrue(body.contains("1405-0042"))
+        // شمارهٔ فاکتور فارسی است (خواستهٔ کاربر) ولی شمارهٔ کارت لاتین می‌ماند
+        assertTrue(body.contains(Money.toPersian("1405-0042")))
         assertTrue(body.contains("یک‌ماهه ۳۰ گیگ"))
         assertTrue(body.contains("6037-9977-1234-5678"))
         // تاریخ و ساعت (شمسی، با ارقام فارسی)
@@ -417,6 +418,6 @@ class BackupPayloadTest {
         val back = json.decodeFromString(ir.cmbtools.ledger.data.BackupPayload.serializer(), v1)
         assertNull(back.settings)
         assertNull(back.panelConfig)
-        assertEquals(2, back.version) // مقدار پیش‌فرض نسخهٔ جدید
+        assertEquals(1, back.version) // همان نسخه‌ای که در فایل نوشته شده
     }
 }

@@ -1,5 +1,10 @@
 package ir.cmbtools.ledger.ui
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
@@ -30,6 +35,8 @@ import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Receipt
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +50,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,6 +63,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -66,6 +75,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import ir.cmbtools.ledger.AppContainer
 import ir.cmbtools.ledger.LedgerApp
+import ir.cmbtools.ledger.core.BackgroundExecutionAccess
 import ir.cmbtools.ledger.Notifications
 import ir.cmbtools.ledger.ui.screens.BankSmsScreen
 import ir.cmbtools.ledger.ui.screens.CustomerDetailScreen
@@ -97,6 +107,86 @@ private val navItems = listOf(
     NavItem("reports", "گزارش", Icons.Outlined.Assessment, Icons.Filled.Assessment),
     NavItem("settings", "تنظیمات", Icons.Outlined.Settings, Icons.Filled.Settings)
 )
+
+@Composable
+private fun FirstLaunchPermissionsPrompt(vm: AppViewModel) {
+    val context = LocalContext.current
+    val promptPrefs = remember(context) { context.getSharedPreferences("first_run_permissions", Context.MODE_PRIVATE) }
+    var showRationale by remember { mutableStateOf(false) }
+
+    val backgroundLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        val allowed = BackgroundExecutionAccess.isExempt(context)
+        vm.report(
+            if (allowed) "اجازهٔ اجرای پس‌زمینه فعال شد"
+            else "اجازهٔ اجرای پس‌زمینه داده نشد؛ ممکن است همگام‌سازی خودکار با تأخیر انجام شود",
+            isError = !allowed
+        )
+    }
+
+    val sendSmsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        vm.report(
+            if (granted) "مجوز ارسال پیامک فعال شد"
+            else "مجوز ارسال پیامک داده نشد؛ برای ارسال با سیم‌کارت از تنظیمات گوشی مجوز را فعال کنید",
+            isError = !granted
+        )
+        val intent = BackgroundExecutionAccess.requestIntent(context)
+        if (intent != null) {
+            runCatching { backgroundLauncher.launch(intent) }.onFailure {
+                runCatching { backgroundLauncher.launch(BackgroundExecutionAccess.settingsIntent()) }
+                    .onFailure { vm.report("بازکردن تنظیمات اجرای پس‌زمینه ممکن نشد", isError = true) }
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (!promptPrefs.getBoolean("shown", false)) showRationale = true
+    }
+
+    fun requestBackgroundAccess() {
+        val intent = BackgroundExecutionAccess.requestIntent(context)
+        if (intent == null) {
+            if (!BackgroundExecutionAccess.isExempt(context)) {
+                runCatching { backgroundLauncher.launch(BackgroundExecutionAccess.settingsIntent()) }
+                    .onFailure { vm.report("بازکردن تنظیمات اجرای پس‌زمینه ممکن نشد", isError = true) }
+            }
+            return
+        }
+        runCatching { backgroundLauncher.launch(intent) }.onFailure {
+            runCatching { backgroundLauncher.launch(BackgroundExecutionAccess.settingsIntent()) }
+                .onFailure { vm.report("بازکردن تنظیمات اجرای پس‌زمینه ممکن نشد", isError = true) }
+        }
+    }
+
+    if (showRationale) {
+        AlertDialog(
+            onDismissRequest = {
+                promptPrefs.edit().putBoolean("shown", true).apply()
+                showRationale = false
+            },
+            title = { Text("اجازه‌های لازم برای پیامک و همگام‌سازی") },
+            text = {
+                Text(
+                    "برای فرستادن فاکتور با سیم‌کارت، اجازهٔ ارسال پیامک لازم است. برای اینکه همگام‌سازی خودکار هنگام خاموش بودن صفحه کمتر متوقف شود، اندروید اجازهٔ جداگانهٔ فعالیت در پس‌زمینه را هم با تأیید شما می‌پرسد. برنامه نمی‌تواند این اجازه‌ها را خودش تأیید کند."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    promptPrefs.edit().putBoolean("shown", true).apply()
+                    showRationale = false
+                    val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+                    if (granted) requestBackgroundAccess()
+                    else sendSmsLauncher.launch(Manifest.permission.SEND_SMS)
+                }) { Text("درخواست اجازه‌ها") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    promptPrefs.edit().putBoolean("shown", true).apply()
+                    showRationale = false
+                }) { Text("بعداً") }
+            }
+        )
+    }
+}
 
 @Composable
 fun AppRoot(container: AppContainer, notifications: Notifications) {
@@ -139,6 +229,8 @@ fun AppRoot(container: AppContainer, notifications: Notifications) {
         )
         return
     }
+
+    FirstLaunchPermissionsPrompt(vm)
 
     Surface(color = MaterialTheme.colorScheme.background) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {

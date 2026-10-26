@@ -49,6 +49,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import ir.cmbtools.ledger.BuildConfig
 import ir.cmbtools.ledger.core.AppSettings
+import ir.cmbtools.ledger.core.BackgroundExecutionAccess
 import ir.cmbtools.ledger.core.Jalali
 import ir.cmbtools.ledger.core.Money
 import ir.cmbtools.ledger.core.SmsGatewayProvider
@@ -83,6 +84,15 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         vm.setAutoSyncEnabled(true)
         if (!granted) vm.report("همگام‌سازی روشن شد؛ اما اعلان‌های آن در تنظیمات اندروید خاموش است")
+    }
+    var backgroundAccessGranted by remember { mutableStateOf(BackgroundExecutionAccess.isExempt(context)) }
+    val backgroundAccessLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        backgroundAccessGranted = BackgroundExecutionAccess.isExempt(context)
+        vm.report(
+            if (backgroundAccessGranted) "اجازهٔ اجرای پس‌زمینه فعال شد"
+            else "اجازهٔ اجرای پس‌زمینه داده نشد؛ ممکن است همگام‌سازی با تأخیر انجام شود",
+            isError = !backgroundAccessGranted
+        )
     }
 
     // سه فیلد مستقل و صریح (بازطراحی ۰.۳.۱):
@@ -389,6 +399,30 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
             }
 
             SectionCard(title = "همگام‌سازی و فاکتور خودکار", visible = tab == SettingsTab.SYNC.ordinal) {
+                Text(
+                    if (backgroundAccessGranted) "اجازهٔ محدودیت‌نداشتن از بهینه‌سازی باتری فعال است"
+                    else "برای کمتر متوقف‌شدن همگام‌سازی هنگام خاموش‌بودن صفحه، اجازهٔ فعالیت پس‌زمینه را فعال کنید",
+                    color = if (backgroundAccessGranted) AccentGreen else TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                if (!backgroundAccessGranted) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            val intent = BackgroundExecutionAccess.requestIntent(context)
+                                ?: BackgroundExecutionAccess.settingsIntent()
+                            runCatching { backgroundAccessLauncher.launch(intent) }
+                                .onFailure { vm.report("بازکردن تنظیمات اجرای پس‌زمینه ممکن نشد", isError = true) }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("درخواست اجازهٔ اجرای پس‌زمینه") }
+                    Text(
+                        "تأیید این اجازه را خود اندروید می‌گیرد؛ در بعضی گوشی‌ها باید تنظیم شروع خودکار برنامه را هم جداگانه روشن کنید.",
+                        color = TextMuted,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -524,6 +558,16 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                         } else vm.updateSettings { it.copy(smsMode = mode) }
                     }
                 )
+                if (settings.smsMode == SmsMode.SIM &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("برای ارسال فاکتور از سیم‌کارت، مجوز ارسال پیامک را فعال کنید.", color = TextMuted)
+                    OutlinedButton(
+                        onClick = { sendSmsPermissionLauncher.launch(Manifest.permission.SEND_SMS) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("درخواست مجوز ارسال پیامک") }
+                }
                 if (settings.smsMode == SmsMode.GATEWAY) {
                     Spacer(Modifier.height(8.dp))
                     DropdownField(

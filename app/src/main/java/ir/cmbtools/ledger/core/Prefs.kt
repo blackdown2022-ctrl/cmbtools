@@ -131,6 +131,25 @@ class Prefs(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
 
+    // Remove stale secrets/audit keys written by the optional bot integration removed in this release.
+    init {
+        sp.edit()
+            .remove("botPaymentEnabled")
+            .remove("botServerUrl")
+            .remove("botApiSecret")
+            .remove("botAuditAtMillis")
+            .remove("botAuditState")
+            .remove("botAuditBank")
+            .remove("botAuditAmountRial")
+            .remove("botAuditAmountUnit")
+            .remove("botAuditReference")
+            .remove("botAuditOrderId")
+            .remove("botAuditMessage")
+            .remove("botAuditHttpStatus")
+            .remove("bankSmsAllowedSender")
+            .apply()
+    }
+
     private val _settings = MutableStateFlow(read())
     val settings: StateFlow<AppSettings> = _settings
 

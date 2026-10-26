@@ -70,7 +70,7 @@
 
 1. روی گوشی این لینک را باز کنید:
    **https://github.com/blackdown2022-ctrl/cmbtools/releases/latest**
-2. در بخش **Assets** فایل `tiznet-<شمارهٔ نسخه>.apk` را دانلود کنید (مثلاً `tiznet-0.5.1.apk`).
+2. در بخش **Assets** فایل `tiznet-<شمارهٔ نسخه>.apk` را دانلود کنید (مثلاً `tiznet-0.8.2.apk`).
 3. اگر پرسید، برای مرورگر اجازهٔ *Install unknown apps* را بدهید → **Install**.
 4. اگر Play Protect هشدار داد → **Install anyway** (اپ مجوز پیامک دارد، طبیعی است).
 

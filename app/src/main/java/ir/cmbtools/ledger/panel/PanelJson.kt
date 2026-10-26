@@ -87,6 +87,3 @@ internal object PanelJson {
 
 /** وقتی پاسخ پنل ساختار مورد انتظار را ندارد. پیامش مستقیماً به کاربر نشان داده می‌شود. */
 class PanelShapeException(message: String) : Exception(message)
-
-/** کدام مسیر کاربران کار می‌کند: صفحهٔ جدید (`/users/`) یا مسیر کلاسیک (`/user/`). */
-internal enum class UsersApiStyle { PAGE, CLASSIC }

@@ -35,8 +35,12 @@ class PanelService(
      *  • `subscriptionBase` — پایهٔ لینک اشتراک مشتری (مستقل از مسیر ادمین؛ خالی = خودکار)
      */
     suspend fun saveConfig(panelUrl: String, apiKey: String, subscriptionBase: String, name: String) {
+        client.invalidate()
         val existing = panelDao.config() ?: PanelConfig()
         val parts = PanelUrl.normalize(panelUrl, "", existing.useHttps)
+        val samePanel = existing.host == parts.host &&
+            existing.adminProxyPath == parts.proxyPath &&
+            existing.apiKey == apiKey.trim()
         panelDao.saveConfig(
             existing.copy(
                 name = name.ifBlank { "پنل اصلی" },
@@ -44,13 +48,17 @@ class PanelService(
                 adminProxyPath = parts.proxyPath,
                 apiKey = apiKey.trim(),
                 useHttps = parts.useHttps,
-                subscriptionBase = PanelUrl.normalizeLinkBase(subscriptionBase)
+                subscriptionBase = PanelUrl.normalizeLinkBase(subscriptionBase),
+                // اگر آدرس یا کلید عوض شده، سبک API و نسخه دوباره تشخیص داده می‌شوند
+                apiFlavor = if (samePanel) existing.apiFlavor else "",
+                panelVersion = if (samePanel) existing.panelVersion else ""
             )
         )
     }
 
     /** ذخیرهٔ فقط پایهٔ لینک اشتراک (بعد از خواندن خودکار از پنل) */
     suspend fun saveSubscriptionBase(base: String) {
+        client.invalidate()
         val existing = panelDao.config() ?: PanelConfig()
         panelDao.saveConfig(existing.copy(subscriptionBase = PanelUrl.normalizeLinkBase(base)))
     }
@@ -63,6 +71,12 @@ class PanelService(
 
     /** ساخت واقعی یک کاربر آزمایشی و پاک کردن آن — قطعی‌ترین آزمون «ساخت کاربر» */
     suspend fun probeCreate(): PanelCheck = client.probeCreate()
+
+    /** کاوش مسیرها/نسخه‌ها و برگرداندن جدول نتیجه (دکمهٔ «جستجوی خودکار») */
+    suspend fun scan(): List<PanelCheck> = client.scan()
+
+    /** سبک API که جواب داد (برای نمایش) */
+    suspend fun flavorLabel(): String = client.flavor?.label ?: "تشخیص داده نشده"
 
     /** متن گزارش برای کپی کردن */
     suspend fun report(checks: List<PanelCheck>): String =
@@ -109,20 +123,20 @@ class PanelService(
                 gb = gb,
                 days = days,
                 startEpochDay = PanelClient.parseEpochDay(user.startDate),
-                expireEpochDay = PanelClient.parseEpochDay(user.expireDate),
+                expireEpochDay = user.expireEpochDay,
                 usageGb = user.currentUsageGb,
                 enabled = user.enable,
-                status = user.status,
+                status = user.statusOrComputed,
                 subscriptionUrl = url,
                 // فاکتور این اکانت پیش از ساخت آن در پنل صادر شده است
-                lastInvoicedExpireEpochDay = PanelClient.parseEpochDay(user.expireDate)
+                lastInvoicedExpireEpochDay = user.expireEpochDay
             )
         )
         return AccountProvisionResult(
             uuid = user.uuid,
             subscriptionUrl = url,
-            expireEpochDay = PanelClient.parseEpochDay(user.expireDate),
-            expireInDays = user.remainingDays
+            expireEpochDay = user.expireEpochDay,
+            expireInDays = user.remainingDaysOrComputed
         )
     }
 
@@ -161,21 +175,21 @@ class PanelService(
                 gb = gb,
                 days = days,
                 startEpochDay = PanelClient.parseEpochDay(user.startDate),
-                expireEpochDay = PanelClient.parseEpochDay(user.expireDate),
+                expireEpochDay = user.expireEpochDay,
                 usageGb = user.currentUsageGb,
                 enabled = user.enable,
-                status = user.status,
+                status = user.statusOrComputed,
                 subscriptionUrl = url,
                 prevExpireEpochDay = existing?.expireEpochDay ?: 0,
                 // فاکتور تمدید پیش از فراخوانی این متد صادر شده است
-                lastInvoicedExpireEpochDay = PanelClient.parseEpochDay(user.expireDate)
+                lastInvoicedExpireEpochDay = user.expireEpochDay
             )
         )
         return AccountProvisionResult(
             uuid = uuid,
             subscriptionUrl = url,
-            expireEpochDay = PanelClient.parseEpochDay(user.expireDate),
-            expireInDays = user.remainingDays
+            expireEpochDay = user.expireEpochDay,
+            expireInDays = user.remainingDaysOrComputed
         )
     }
 

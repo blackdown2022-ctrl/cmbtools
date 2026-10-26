@@ -115,7 +115,8 @@ class SyncEngine(
                 }
             }
 
-            val newExpire = PanelClient.parseEpochDay(u.expireDate)
+            // در نسخه‌های ۱۱–۱۳ فیلد expire_date وجود ندارد؛ از start_date + package_days حساب می‌شود
+            val newExpire = u.expireEpochDay
             val oldExpire = old?.expireEpochDay ?: 0L
             var lastInvoicedExpire = old?.lastInvoicedExpireEpochDay ?: 0L
 
@@ -207,7 +208,7 @@ class SyncEngine(
                     expireEpochDay = newExpire,
                     usageGb = u.currentUsageGb,
                     enabled = u.enable,
-                    status = u.status,
+                    status = u.statusOrComputed,
                     subscriptionUrl = client.subscriptionUrl(u.uuid, linkBase),
                     prevExpireEpochDay = oldExpire,
                     lastInvoicedExpireEpochDay = lastInvoicedExpire

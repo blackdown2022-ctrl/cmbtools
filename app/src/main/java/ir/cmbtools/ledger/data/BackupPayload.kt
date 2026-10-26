@@ -19,7 +19,7 @@ import kotlinx.serialization.Serializable
 data class BackupPayload(
     val version: Int = 2,
     val createdAt: Long = System.currentTimeMillis(),
-    val appVersion: String = "0.3.0",
+    val appVersion: String = "0.3.2",
     val customers: List<Customer> = emptyList(),
     val plans: List<Plan> = emptyList(),
     val invoices: List<Invoice> = emptyList(),

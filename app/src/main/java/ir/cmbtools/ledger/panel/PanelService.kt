@@ -87,27 +87,20 @@ class PanelService(
     suspend fun test(): PanelConnection = client.testConnection()
 
     /**
-     * ساخت اکانت جدید برای مشتری. اگر فاکتور از قبل ساخته شده باشد، uuid در فاکتور ثبت می‌شود.
-     * نام کاربری در پنل: نام مشتری + شمارهٔ فاکتور تا یکتا و قابل جست‌وجو باشد.
+     * ساخت اکانت جدید برای مشتری؛ نام پنل دقیقاً همان نام واردشدهٔ مشتری است.
      */
     suspend fun createAccount(
         customerId: Long,
-        planName: String,
         gb: Double,
-        days: Int,
-        invoiceNumber: String = ""
+        days: Int
     ): AccountProvisionResult {
         val customer = customerDao.byId(customerId) ?: error("مشتری پیدا نشد")
-        val name = buildString {
-            append(customer.name)
-            if (invoiceNumber.isNotBlank()) append(" ").append(invoiceNumber)
-            if (planName.isNotBlank()) append(" - ").append(planName)
-        }.take(120)
+        val name = customer.name
 
-        // یادداشت کاربر در پنل = شمارهٔ مشتری (تا همان‌جا قابل خواندن و ویرایش باشد).
-        // اگر مشتری شماره نداشت، شناسهٔ داخلی نوشته می‌شود تا اتصال حفظ شود.
-        val comment = Phone.normalize(customer.phone)
-            .ifBlank { "cmbtools:${customer.id}:${customer.name}" }
+        // شماره برای خوانایی حفظ می‌شود و شناسهٔ محلی اتصال قطعی را تضمین می‌کند.
+        // شناسه بعد از شماره قرار می‌گیرد تا شماره‌خوانی نسخه‌های قبلی هم سازگار بماند.
+        val phone = Phone.normalize(customer.phone)
+        val comment = if (phone.isNotBlank()) "$phone | cmbtools:${customer.id}" else "cmbtools:${customer.id}"
         val user = client.createUser(
             name = name,
             gb = gb,

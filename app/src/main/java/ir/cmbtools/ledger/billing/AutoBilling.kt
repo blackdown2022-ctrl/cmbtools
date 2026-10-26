@@ -5,6 +5,7 @@ import ir.cmbtools.ledger.core.InvoiceKind
 import ir.cmbtools.ledger.core.Money
 import ir.cmbtools.ledger.core.Phone
 import ir.cmbtools.ledger.core.PanelSyncRules
+import ir.cmbtools.ledger.core.PanelCustomerNames
 import ir.cmbtools.ledger.core.Prefs
 import ir.cmbtools.ledger.data.Customer
 import ir.cmbtools.ledger.data.CustomerDao
@@ -259,10 +260,11 @@ class AutoBilling(
      * پیدا کردن مشتری برای کاربر پنل؛ اگر نبود و اجازه داشته باشیم، مشتری می‌سازد.
      *
      * منابع شماره، به ترتیب اولویت:
-     *  ۱) **یادداشت/کامنت کاربر در پنل** — چون کاربر شمارهٔ مشتری را همان‌جا می‌نویسد
-     *  ۲) شماره‌ای که داخل نام کاربر پنل باشد
+     *  ۱) شناسهٔ پیوندی اپ در یادداشت پنل
+     *  ۲) شمارهٔ یکتای مشتری در یادداشت پنل، سپس شمارهٔ داخل نام
+     *  ۳) تطبیق نام کامل و یکتا؛ هرگز تطبیق بر اساس نام کوچک/پیشوند انجام نمی‌شود
      *
-     * اگر مشتریِ موجود شماره نداشت و در یادداشت پنل شماره بود، شماره به پروفایلش اضافه می‌شود.
+     * نام تکراری مبهم محسوب می‌شود و هیچ مشتری جدیدی به‌صورت خودکار ساخته نمی‌شود.
      */
     suspend fun resolveOrCreateCustomer(
         panelName: String,
@@ -281,13 +283,12 @@ class AutoBilling(
         }
         // ۲) شمارهٔ داخل یادداشت پنل (سناریوی اصلی: کاربر شماره را در یادداشت می‌نویسد)
         if (phone.isNotBlank()) findCustomerByPhone(phone)?.let { return it }
-        // ۳) نام دقیق
-        customers.byName(cleanName)?.let { return withPhone(it, phone) }
-        // ۴) اولین کلمهٔ نام
-        val firstToken = cleanName.substringBefore(" ").trim()
-        if (firstToken.length >= 3) {
-            customers.byName(firstToken)?.let { return withPhone(it, phone) }
+        // ۳) فقط نام کامل و دقیق؛ اگر نام تکراری باشد هرگز حدس نمی‌زنیم.
+        val nameMatches = exactNameMatches(cleanName)
+        if (nameMatches.size == 1) {
+            customers.byId(nameMatches.single())?.let { return withPhone(it, phone) }
         }
+        if (nameMatches.size > 1) return null
 
         if (!allowCreate || cleanName.isBlank()) return null
 
@@ -313,11 +314,11 @@ class AutoBilling(
     suspend fun findCustomerByPhone(rawPhone: String): Customer? {
         val phone = Phone.normalize(rawPhone)
         if (phone.isBlank()) return null
-        customers.byPhone(phone)?.let { return it }
-        return customers.all()
+        val matches = customers.all()
             .asSequence()
-            .filter { !it.archived }
-            .firstOrNull { Phone.normalize(it.phone) == phone }
+            .filter { !it.archived && Phone.normalize(it.phone) == phone }
+            .toList()
+        return matches.singleOrNull()
     }
 
     /**
@@ -346,27 +347,22 @@ class AutoBilling(
     }
 
     /** شناسهٔ مشتری از کامنت `cmbtools:<id>:<...>` (نوشتهٔ خود این اپ) */
-    fun customerIdFromComment(comment: String?): Long {
-        if (comment == null) return 0
-        val trimmed = comment.trim()
-        if (!trimmed.startsWith("cmbtools:") && !trimmed.startsWith("cmbtools|")) return 0
-        val rest = trimmed.removePrefix("cmbtools:").removePrefix("cmbtools|")
-        return rest.substringBefore(":").substringBefore("|").trim().toLongOrNull()?.takeIf { it > 0 } ?: 0
-    }
+    fun customerIdFromComment(comment: String?): Long =
+        PanelCustomerNames.customerIdFromComment(comment)
 
     /** شمارهٔ موبایل داخل یادداشت/کامنت کاربر پنل */
     fun phoneFromComment(comment: String?): String {
         if (comment.isNullOrBlank()) return ""
-        if (customerIdFromComment(comment) > 0 && Phone.extract(comment).isBlank()) return ""
-        return Phone.extract(comment)
+        return Phone.extract(PanelCustomerNames.commentBeforeLink(comment))
     }
 
     /** حذف شمارهٔ فاکتور و نام بسته از انتهای نام کاربر پنل (که خود اپ اضافه کرده بود) */
-    fun sanitizePanelName(raw: String): String {
-        var name = raw.trim()
-        name = name.replace(Regex("""\s\d{4}-\d{4}$"""), "")          // 1405-0001
-        name = name.replace(Regex("""\s-\s[^-]{1,40}$"""), "")        // - یک‌ماهه ۳۰ گیگ
-        return name.trim()
+    fun sanitizePanelName(raw: String): String = PanelCustomerNames.cleanLegacyPanelName(raw)
+
+    /** شناسهٔ یکتای مشتری با نام کامل؛ فهرست خالی یعنی نبودن یا ابهام در نام. */
+    suspend fun exactNameMatches(panelName: String): List<Long> {
+        val candidates = customers.all().filterNot { it.archived }.map { it.id to it.name }
+        return PanelCustomerNames.exactMatchIds(panelName, candidates)
     }
 
     /** اولین شمارهٔ موبایل ایرانی داخل متن (سازگاری با کد قبلی) */

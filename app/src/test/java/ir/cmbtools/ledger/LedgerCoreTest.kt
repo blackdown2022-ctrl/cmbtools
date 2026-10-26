@@ -120,6 +120,16 @@ class BankSmsParserTest {
     }
 
     @Test
+    fun parses_alternate_bank_tracking_reference_labels() {
+        val parsed = BankSmsParser.parse(
+            "bankmellat",
+            "واریز: ۱۲۰۰۰۰ ریال\nشماره رهگیری: 87654321",
+            0
+        )
+        assertEquals("87654321", parsed.refNo)
+    }
+
+    @Test
     fun bot_only_accepts_known_bank_credit_with_reference() {
         val valid = BankSmsParser.parse(
             "bankmellat",
@@ -135,9 +145,15 @@ class BankSmsParserTest {
             "واریز: ۱۲۰۰۰۰ ریال\nکد پیگیری: 12345678\nبرگشت وجه",
             0
         )
+        val unrepresentableAmount = BankSmsParser.parse(
+            "bankmellat",
+            "واریز: ۱۲۰۰۰۱ ریال\nکد پیگیری: 12345678",
+            0
+        )
         assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(missingReference))
         assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(unknownBank))
         assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(reversal))
+        assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(unrepresentableAmount))
     }
 }
 

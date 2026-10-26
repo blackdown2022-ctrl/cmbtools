@@ -1,5 +1,6 @@
 package ir.cmbtools.ledger.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
@@ -24,12 +25,14 @@ import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Receipt
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -95,6 +98,7 @@ private val navItems = listOf(
     NavItem("customers", "مشتری", Icons.Outlined.People, Icons.Filled.People),
     NavItem("invoices", "فاکتور", Icons.Outlined.Receipt, Icons.Filled.Receipt),
     NavItem("bank", "بانک", Icons.Outlined.AccountBalance, Icons.Filled.AccountBalance),
+    NavItem("bot", "ربات", Icons.Outlined.SmartToy, Icons.Filled.SmartToy),
     NavItem("reports", "گزارش", Icons.Outlined.Assessment, Icons.Filled.Assessment),
     NavItem("settings", "تنظیمات", Icons.Outlined.Settings, Icons.Filled.Settings)
 )
@@ -125,12 +129,18 @@ fun AppRoot(container: AppContainer, notifications: Notifications) {
 
     val navIntent by vm.navIntent.collectAsStateWithLifecycle()
     LaunchedEffect(navIntent) {
-        navIntent?.let {
-            navController.navigate(it) { launchSingleTop = true }
+        navIntent?.let { route ->
+            if (navItems.any { it.route == route }) {
+                navController.navigateToTab(route)
+            } else {
+                navController.navigate(route) { launchSingleTop = true }
+            }
             vm.consumeNavIntent()
         }
     }
 
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStackEntry?.destination?.route
     val locked = settings.lockEnabled && settings.lockPin.isNotBlank() && !unlocked
     if (locked) {
         LockScreen(
@@ -139,6 +149,16 @@ fun AppRoot(container: AppContainer, notifications: Notifications) {
             onUnlock = { unlocked = true }
         )
         return
+    }
+
+    // بازگشت از یک تب اصلی همیشه به داشبورد برمی‌گردد و تاریخچهٔ تب‌های قبلی را
+    // پاک می‌کند؛ در صفحه‌های جزئی فقط یک سطح به عقب می‌رود.
+    BackHandler(enabled = currentRoute != null && currentRoute != "dashboard") {
+        if (currentRoute != null && navItems.any { it.route == currentRoute }) {
+            navController.navigateToTab("dashboard")
+        } else if (!navController.popBackStack()) {
+            navController.navigateToTab("dashboard")
+        }
     }
 
     Surface(color = MaterialTheme.colorScheme.background) {

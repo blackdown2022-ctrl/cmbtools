@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Button
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -113,6 +114,20 @@ fun DashboardScreen(vm: AppViewModel, nav: NavHostController) {
                         subtitle = "تطبیق دستی لازم است",
                         onClick = { nav.navigate("bank") }
                     )
+                }
+            }
+
+            item {
+                SectionCard(title = "ربات فروش") {
+                    Text(
+                        if (settings.botPaymentEnabled) "تأیید پیامک واریز برای سفارش‌های مبلغ‌یکتا روشن است"
+                        else "تنظیم اتصال سرور ربات و آزمایش وضعیت",
+                        color = TextMuted
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = { nav.navigate("bot") }) {
+                        Text(if (settings.botPaymentEnabled) "تنظیمات ربات" else "ورود به بخش ربات")
+                    }
                 }
             }
 

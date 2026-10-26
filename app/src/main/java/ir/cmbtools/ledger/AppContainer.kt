@@ -10,6 +10,7 @@ import ir.cmbtools.ledger.data.PaymentRepository
 import ir.cmbtools.ledger.data.ReportingRepository
 import ir.cmbtools.ledger.panel.PanelClient
 import ir.cmbtools.ledger.panel.PanelService
+import ir.cmbtools.ledger.sms.BotPaymentClient
 import ir.cmbtools.ledger.sms.PaymentMatcher
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.sync.SyncEngine
@@ -44,6 +45,7 @@ class AppContainer(context: Context) {
     val panelService = PanelService(panelClient, panelDao, customersDao, prefs)
     val matcher = PaymentMatcher(bankSmsDao, customersDao, invoicesDao, payments, prefs)
     val smsSender = SmsSender(appContext, outboxDao)
+    val botPaymentClient = BotPaymentClient()
     val seed = SeedData(customersDao, plansDao, panelDao)
 
     /** موتور صورت‌حساب خودکار (فاکتور + پیامک) — مشترک بین UI و همگام‌سازی پس‌زمینه */

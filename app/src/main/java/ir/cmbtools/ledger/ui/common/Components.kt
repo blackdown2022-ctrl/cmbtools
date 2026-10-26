@@ -12,16 +12,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -154,19 +157,21 @@ fun LabeledField(
     )
 }
 
-/** فیلد مبلغ: ورودی تومان/ریال با تبدیل شفاف (ذخیره همیشه ریال) */
+/**
+ * فیلد مبلغ: ورودی با جداکنندهٔ سه‌رقمی و ارقام فارسی (ذخیره همیشه `Long` ریال).
+ *
+ * «۱۲٬۵۰۰٬۰۰۰» هم موقع تایپ دیده می‌شود و هم موقع نمایش؛ مقدار عددی خام برای
+ * محاسبه استفاده می‌شود.
+ */
 @Composable
 fun AmountField(
     label: String,
     valueRial: Long,
     onValueChangeRial: (Long) -> Unit,
     modifier: Modifier = Modifier,
-    hint: String = "به ریال"
+    hint: String = "ریال"
 ) {
-    // مقدار نمایشی از بیرون هم به‌روز می‌شود (مثلاً انتخاب بسته)، ولی هنگام تایپ، متن
-    // کاربر بازنویسی نمی‌شود. نسخهٔ قبلی با remember(valueRial) هر تغییر بیرونی، حالت
-    // فیلد را از نو می‌ساخت و در بعضی حالت‌ها صفر شدن مقدار را پنهان می‌کرد.
-    fun render(v: Long): String = if (v == 0L) "" else Money.toPersian(v.toString())
+    fun render(v: Long): String = if (v == 0L) "" else Money.groupDigits(v.toString())
     var text by remember { mutableStateOf(render(valueRial)) }
     LaunchedEffect(valueRial) {
         val typed = Money.toLatinDigits(text).filter { it.isDigit() }.toLongOrNull() ?: 0L
@@ -176,11 +181,12 @@ fun AmountField(
         value = text,
         onValueChange = { input ->
             val digits = Money.toLatinDigits(input).filter { it.isDigit() }
-            text = if (digits.isEmpty()) "" else Money.toPersian(digits)
+            text = Money.groupDigits(digits)
             onValueChangeRial(digits.toLongOrNull() ?: 0L)
         },
         label = { Text(label) },
         suffix = { Text(hint, color = TextMuted, style = MaterialTheme.typography.labelMedium) },
+        textStyle = MaterialTheme.typography.bodyLarge,
         modifier = modifier.fillMaxWidth(),
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -188,7 +194,13 @@ fun AmountField(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * کشویی انتخاب (Dropdown) که داخل دیالوگ هم مطمئن باز می‌شود.
+ *
+ * `ExposedDropdownMenuBox` وقتی داخل `AlertDialog` باشد در بعضی دستگاه‌ها باز نمی‌شد
+ * (گرهٔ لمس با دیالوگ تداخل داشت). اینجا یک لایهٔ لمس روی فیلد گذاشته شده و
+ * فهرست با `DropdownMenu` (Popup مستقل) نمایش داده می‌شود.
+ */
 @Composable
 fun <T> DropdownField(
     label: String,
@@ -196,29 +208,54 @@ fun <T> DropdownField(
     selected: T?,
     itemLabel: (T) -> String,
     onSelect: (T) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-        modifier = modifier.fillMaxWidth()
-    ) {
+    Box(modifier = modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = selected?.let(itemLabel) ?: "",
             onValueChange = {},
             readOnly = true,
             label = { Text(label) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(),
-            shape = RoundedCornerShape(14.dp)
+            trailingIcon = {
+                Icon(
+                    Icons.Default.KeyboardArrowDown,
+                    contentDescription = "باز کردن فهرست",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            textStyle = MaterialTheme.typography.bodyLarge
         )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        // لایهٔ شفاف: هر لمس روی فیلد، فهرست را باز می‌کند
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clickable(enabled = enabled) { expanded = true }
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.widthIn(min = 220.dp, max = 420.dp)
+        ) {
+            if (items.isEmpty()) {
+                DropdownMenuItem(
+                    text = { Text("موردی تعریف نشده", color = TextMuted) },
+                    onClick = { expanded = false }
+                )
+            }
             items.forEach { item ->
                 DropdownMenuItem(
-                    text = { Text(itemLabel(item)) },
+                    text = {
+                        Text(
+                            itemLabel(item),
+                            fontWeight = if (item == selected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (item == selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface
+                        )
+                    },
                     onClick = {
                         onSelect(item)
                         expanded = false
@@ -356,18 +393,19 @@ fun statusColor(status: String): Color = when (status) {
     "PAID" -> AccentGreen
     "PARTIAL" -> AccentAmber
     "VOID" -> AccentRed
-    "ISSUED" -> Color(0xFF60A5FA)
+    "ISSUED" -> Color(0xFF1D4ED8)
     else -> TextMuted
 }
 
 @Composable
 fun GradientHeader(title: String, subtitle: String? = null, action: (@Composable () -> Unit)? = null) {
+    val scheme = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(
                 Brush.horizontalGradient(
-                    listOf(Color(0xFF0B1220), Color(0xFF16213A))
+                    listOf(scheme.primaryContainer, scheme.surface)
                 )
             )
             .padding(horizontal = 16.dp, vertical = 16.dp)
@@ -377,9 +415,23 @@ fun GradientHeader(title: String, subtitle: String? = null, action: (@Composable
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(title, style = MaterialTheme.typography.titleLarge, color = Color.White)
-                if (subtitle != null) Text(subtitle, color = TextMuted, style = MaterialTheme.typography.labelMedium)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = scheme.onPrimaryContainer,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                if (subtitle != null) {
+                    Text(
+                        subtitle,
+                        color = TextMuted,
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
             }
             action?.invoke()
         }

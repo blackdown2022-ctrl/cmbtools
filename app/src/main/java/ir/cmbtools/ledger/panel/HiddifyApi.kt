@@ -1,5 +1,6 @@
 package ir.cmbtools.ledger.panel
 
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -9,8 +10,16 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 
 /**
- * مسیرها با `<admin_proxy_path>` شروع می‌شوند؛ همان مقداری که در
- * «تنظیمات ← تنظیمات خیلی پیشرفته ← مسیر پروکسی مدیران» پنل است.
+ * مسیرهای API v2 هیدی‌فای. `<proxyPath>` همان «مسیر پروکسی ادمین» است.
+ *
+ * همهٔ پاسخ‌ها `ResponseBody` برمی‌گردانند تا:
+ *  • شکل پاسخ (آرایه/صفحه‌بندی/پوشش `user`) در کد خودمان بخشنده خوانده شود؛
+ *  • متن خطای پنل برای نمایش به کاربر در دسترس باشد.
+ *
+ * دو خانوادهٔ مسیر برای کاربران نگه داشته شده‌اند:
+ *  • `users/`  → صفحهٔ کاربران نسخهٔ ۱۴ (با متادیتا: لینک‌دامنه‌ها، can_add، read_only)
+ *  • `user/`   → مسیر کلاسیک (در نسخه‌های قدیمی‌تر همان چیزی است که وجود دارد)
+ * اگر یکی ۴۰۴ بدهد، دیگری امتحان می‌شود.
  */
 interface HiddifyApi {
 
@@ -18,52 +27,90 @@ interface HiddifyApi {
     suspend fun panelInfo(
         @Path("proxyPath") proxyPath: String,
         @Header("Hiddify-API-Key") apiKey: String
-    ): PanelInfoDto
+    ): ResponseBody
 
-    /** لیست کاربران + متادیتا (لینک‌دامنه‌ها، دسترسی) */
+    // ── خواندن کاربران ────────────────────────────────────────────────────────
+
     @GET("{proxyPath}/api/v2/admin/users/")
     suspend fun usersPage(
         @Path("proxyPath") proxyPath: String,
         @Header("Hiddify-API-Key") apiKey: String
-    ): UsersPageDto
+    ): ResponseBody
+
+    @GET("{proxyPath}/api/v2/admin/user/")
+    suspend fun usersClassic(
+        @Path("proxyPath") proxyPath: String,
+        @Header("Hiddify-API-Key") apiKey: String
+    ): ResponseBody
 
     @GET("{proxyPath}/api/v2/admin/users/{uuid}/")
-    suspend fun user(
+    suspend fun userPage(
         @Path("proxyPath") proxyPath: String,
         @Path("uuid") uuid: String,
         @Header("Hiddify-API-Key") apiKey: String
-    ): PanelUserDto
+    ): ResponseBody
+
+    @GET("{proxyPath}/api/v2/admin/user/{uuid}/")
+    suspend fun userClassic(
+        @Path("proxyPath") proxyPath: String,
+        @Path("uuid") uuid: String,
+        @Header("Hiddify-API-Key") apiKey: String
+    ): ResponseBody
+
+    // ── نوشتن ─────────────────────────────────────────────────────────────────
 
     @POST("{proxyPath}/api/v2/admin/users/")
-    suspend fun createUser(
+    suspend fun createUserPage(
         @Path("proxyPath") proxyPath: String,
         @Header("Hiddify-API-Key") apiKey: String,
         @Body body: CreateUserRequest
-    ): PanelUserDto
+    ): ResponseBody
+
+    @POST("{proxyPath}/api/v2/admin/user/")
+    suspend fun createUserClassic(
+        @Path("proxyPath") proxyPath: String,
+        @Header("Hiddify-API-Key") apiKey: String,
+        @Body body: CreateUserRequest
+    ): ResponseBody
 
     @PATCH("{proxyPath}/api/v2/admin/users/{uuid}/")
-    suspend fun patchUser(
+    suspend fun patchUserPage(
         @Path("proxyPath") proxyPath: String,
         @Path("uuid") uuid: String,
         @Header("Hiddify-API-Key") apiKey: String,
         @Body body: PatchUserRequest
-    ): PanelUserDto
+    ): ResponseBody
+
+    @PATCH("{proxyPath}/api/v2/admin/user/{uuid}/")
+    suspend fun patchUserClassic(
+        @Path("proxyPath") proxyPath: String,
+        @Path("uuid") uuid: String,
+        @Header("Hiddify-API-Key") apiKey: String,
+        @Body body: PatchUserRequest
+    ): ResponseBody
 
     @DELETE("{proxyPath}/api/v2/admin/users/{uuid}/")
-    suspend fun deleteUser(
+    suspend fun deleteUserPage(
         @Path("proxyPath") proxyPath: String,
         @Path("uuid") uuid: String,
         @Header("Hiddify-API-Key") apiKey: String
-    )
+    ): ResponseBody
+
+    @DELETE("{proxyPath}/api/v2/admin/user/{uuid}/")
+    suspend fun deleteUserClassic(
+        @Path("proxyPath") proxyPath: String,
+        @Path("uuid") uuid: String,
+        @Header("Hiddify-API-Key") apiKey: String
+    ): ResponseBody
 
     /**
      * عملیات گروهی: action ∈ enable | disable | delete | reset_usage | reset_days | add_days | add_limits
-     * برای تمدید روز/حجم از add_limits استفاده می‌کنیم تا رفتار با خود پنل یکی باشد.
+     * برای «افزودن حجم/روز» از add_limits استفاده می‌کنیم تا رفتار با خود پنل یکی باشد.
      */
     @POST("{proxyPath}/api/v2/admin/users/bulk/")
     suspend fun bulk(
         @Path("proxyPath") proxyPath: String,
         @Header("Hiddify-API-Key") apiKey: String,
         @Body body: BulkRequest
-    ): BulkResponse
+    ): ResponseBody
 }

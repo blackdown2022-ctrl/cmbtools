@@ -5,7 +5,10 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.Serializable
 
+/** همهٔ تنظیمات برنامه؛ در فایل پشتیبان هم ذخیره می‌شود (نسخهٔ ۲). */
+@Serializable
 data class AppSettings(
     val persianDigits: Boolean = true,
     val lockEnabled: Boolean = false,

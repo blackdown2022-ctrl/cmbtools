@@ -34,6 +34,7 @@ import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.sms.SmsTemplate
 import ir.cmbtools.ledger.sync.AutoSyncController
 import ir.cmbtools.ledger.sync.SyncReport
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +43,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -80,6 +82,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _lastSync = MutableStateFlow<SyncReport?>(null)
     val lastSync: StateFlow<SyncReport?> = _lastSync.asStateFlow()
 
+    /** نتیجهٔ عیب‌یابی گام‌به‌گام پنل (تنظیمات → عیب‌یابی) */
+    private val _panelChecks = MutableStateFlow<List<ir.cmbtools.ledger.panel.PanelCheck>>(emptyList())
+    val panelChecks: StateFlow<List<ir.cmbtools.ledger.panel.PanelCheck>> = _panelChecks.asStateFlow()
+
+    /** پیشرفت کارهای طولانی (همگام‌سازی/ساخت کاربر) برای نمایش متن مرحله */
+    private val _busyText = MutableStateFlow("")
+    val busyText: StateFlow<String> = _busyText.asStateFlow()
+
     private val _navIntent = MutableStateFlow<String?>(null)
     val navIntent: StateFlow<String?> = _navIntent.asStateFlow()
 
@@ -96,12 +106,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardSummary())
 
     val dailySales: StateFlow<List<DailyPoint>> = c.reports.observeDailySales()
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val aging = c.reports.observeAging()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ir.cmbtools.ledger.data.AgingReport(emptyList()))
 
     val customers: StateFlow<List<CustomerRow>> = c.customers.observeRows()
+        // محاسبهٔ مانده هر مشتری (combine روی فاکتورها) روی رشتهٔ پس‌زمینه انجام شود؛
+        // وگرنه روی گوشی ضعیف، بازترکیب صفحه‌ها کند می‌شود.
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val plans: StateFlow<List<Plan>> = c.plans().observeActive()
@@ -151,6 +165,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val soon = LocalDate.now().plusDays(7).toEpochDay()
             list.filter { it.enabled && it.expireEpochDay in 1..soon }
         }
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // ---------------------------------------------------------------- پیام‌ها
@@ -524,15 +539,39 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _panelStatus.value = "در حال بررسی..."
         try {
             val r: PanelConnection = c.panelService.test()
-            _panelStatus.value = "متصل • نسخهٔ ${r.version.ifBlank { "?" }} • " +
-                (if (r.readOnly) "پنل read-only است" else "قابل نوشتن") +
-                (if (!r.canAddUsers) " • سقف کاربران پر است" else "")
+            _panelStatus.value = buildString {
+                append("متصل • نسخهٔ ").append(Money.toPersian(r.version.ifBlank { "?" }))
+                append(" • ").append(Money.toPersian(r.usersCount.toString())).append(" کاربر")
+                append(" • ").append(if (r.readOnly) "پنل read-only" else "قابل نوشتن")
+                if (!r.canAddUsers) append(" • سقف کاربران/ترافیک پر است")
+                if (r.endpoint.isNotBlank()) append(" • مسیر ").append(r.endpoint)
+            }
             success("اتصال پنل برقرار است (نسخه ${r.version})")
         } catch (e: Exception) {
             _panelStatus.value = "اتصال ناموفق"
             failure(e.message ?: "اتصال برقرار نشد")
         } finally {
             _busy.value = false
+        }
+    }
+
+    /** عیب‌یابی کامل اتصال پنل: هر مرحله را جدا گزارش می‌دهد */
+    fun diagnosePanel() = viewModelScope.launch {
+        _busy.value = true
+        _busyText.value = "در حال بررسی اتصال پنل..."
+        try {
+            val checks = c.panelService.diagnose()
+            _panelChecks.value = checks
+            val failed = checks.count { !it.ok }
+            success(
+                if (failed == 0) "همهٔ مراحل اتصال درست است ✅"
+                else Money.toPersian(failed.toString()) + " مرحله مشکل دارد — جزئیات را ببینید"
+            )
+        } catch (e: Exception) {
+            failure(e.message ?: "عیب‌یابی ناموفق")
+        } finally {
+            _busy.value = false
+            _busyText.value = ""
         }
     }
 

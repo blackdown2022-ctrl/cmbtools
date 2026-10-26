@@ -11,6 +11,7 @@ import ir.cmbtools.ledger.sms.BankSmsParser
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.data.Customer
 import ir.cmbtools.ledger.data.Invoice
+import ir.cmbtools.ledger.panel.PanelUrl
 import ir.cmbtools.ledger.sms.SmsTemplate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -311,5 +312,111 @@ class PhoneTest {
         assertTrue(Phone.isValid("+989121234567"))
         assertFalse(Phone.isValid("02188776655"))
         assertFalse(Phone.isValid("12345"))
+    }
+}
+
+/**
+ * تست‌های این دور: تجزیهٔ آدرس پنل، جداکنندهٔ سه‌رقمی مبلغ، و کامل بودن فایل پشتیبان.
+ */
+class PanelUrlTest {
+
+    @Test
+    fun keeps_plain_domain() {
+        val p = PanelUrl.normalize("panel.example.com", "AbCdEf")
+        assertEquals("panel.example.com", p.host)
+        assertEquals("AbCdEf", p.proxyPath)
+        assertTrue(p.useHttps)
+    }
+
+    @Test
+    fun strips_scheme_and_trailing_slash() {
+        val p = PanelUrl.normalize("https://panel.example.com/", "AbCdEf/")
+        assertEquals("panel.example.com", p.host)
+        assertEquals("AbCdEf", p.proxyPath)
+        assertTrue(p.useHttps)
+    }
+
+    @Test
+    fun splits_host_that_contains_proxy_path() {
+        // کاربر ممکن است لینک Api را کامل در فیلد دامنه بچسباند
+        val p = PanelUrl.normalize("https://panel.example.com/AbCdEf/api/v2/admin/users/", "")
+        assertEquals("panel.example.com", p.host)
+        assertEquals("AbCdEf", p.proxyPath)
+    }
+
+    @Test
+    fun removes_api_suffix_from_proxy_path() {
+        assertEquals("ZyXw12", PanelUrl.cleanPath("ZyXw12/api/v2/admin"))
+        assertEquals("ZyXw12", PanelUrl.cleanPath("/ZyXw12/"))
+        assertEquals("", PanelUrl.cleanPath("api/v2/admin"))
+    }
+
+    @Test
+    fun recognizes_http() {
+        val p = PanelUrl.normalize("http://192.168.1.10:8000", "AbC")
+        assertEquals("192.168.1.10:8000", p.host)
+        assertFalse(p.useHttps)
+    }
+}
+
+class MoneyGroupingTest {
+
+    @Test
+    fun groups_every_three_digits() {
+        assertEquals("۱٬۲۳۴٬۵۶۷", Money.groupDigits("1234567"))
+        assertEquals("۱۲۳", Money.groupDigits("123"))
+        assertEquals("۱٬۰۰۰", Money.groupDigits("1000"))
+        assertEquals("۱۲٬۳۴۵٬۶۷۸٬۹۰۱", Money.groupDigits("12345678901"))
+    }
+
+    @Test
+    fun accepts_persian_input_and_ignores_separators() {
+        assertEquals("۱۲٬۳۴۵", Money.groupDigits("۱۲٬۳۴۵"))
+        assertEquals("۱۲٬۳۴۵", Money.groupDigits("12 345"))
+    }
+
+    @Test
+    fun trims_leading_zeros_and_handles_empty() {
+        assertEquals("۵۰۰", Money.groupDigits("0500"))
+        assertEquals("", Money.groupDigits(""))
+        assertEquals("۰", Money.groupDigits("0"))
+    }
+}
+
+class BackupPayloadTest {
+
+    private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    @Test
+    fun backup_includes_settings_and_panel_config() {
+        val payload = ir.cmbtools.ledger.data.BackupPayload(
+            customers = listOf(Customer(name = "علی", phone = "09121234567")),
+            panelConfig = ir.cmbtools.ledger.data.PanelConfig(
+                host = "panel.example.com",
+                adminProxyPath = "AbCdEf",
+                apiKey = "0000-1111",
+                useHttps = true
+            ),
+            settings = AppSettings(businessName = "فروشگاه من", paymentCardNumber = "6037-9977-1234-5678")
+        )
+        val text = json.encodeToString(ir.cmbtools.ledger.data.BackupPayload.serializer(), payload)
+        assertTrue(text.contains("\"settings\""))
+        assertTrue(text.contains("panel.example.com"))
+        assertTrue(text.contains("6037-9977-1234-5678"))
+
+        val back = json.decodeFromString(ir.cmbtools.ledger.data.BackupPayload.serializer(), text)
+        assertEquals("panel.example.com", back.panelConfig?.host)
+        assertEquals("فروشگاه من", back.settings?.businessName)
+        assertEquals(1, back.customers.size)
+    }
+
+    @Test
+    fun old_v1_backup_without_settings_still_loads() {
+        // فایل پشتیبان نسخهٔ ۱ (بدون settings/panelConfig) نباید خطا بدهد
+        val v1 = """{"version":1,"customers":[],"plans":[]}"""
+        val back = json.decodeFromString(ir.cmbtools.ledger.data.BackupPayload.serializer(), v1)
+        assertNull(back.settings)
+        assertNull(back.panelConfig)
+        assertEquals(2, back.version) // مقدار پیش‌فرض نسخهٔ جدید
     }
 }

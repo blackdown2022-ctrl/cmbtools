@@ -169,22 +169,18 @@ fun ReportsScreen(vm: AppViewModel, nav: NavHostController) {
                         modifier = Modifier.weight(1f)
                     ) { Text("Excel مشتریان") }
                 }
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = {
-                        ExportManager(context, vm.appContainer()).exportBackup { r ->
-                            r.onSuccess { vm.report("پشتیبان ساخته شد: " + it.name) }
-                                .onFailure { vm.report("پشتیبان‌گیری ناموفق: ${it.message}", isError = true) }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("پشتیبان کامل (JSON)") }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "فایل‌ها در پوشهٔ «اسناد» اپ ساخته و برای اشتراک‌گذاری/ذخیره باز می‌شوند.",
+                    "پشتیبان‌گیری و بازیابی فقط در «تنظیمات ← پشتیبان» است تا جای اشتباه نباشد. " +
+                        "اینجا فقط خروجی Excel گرفته می‌شود.",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(
+                    onClick = { vm.navigate("settings") },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("رفتن به پشتیبان‌گیری در تنظیمات") }
             }
 
             Text(

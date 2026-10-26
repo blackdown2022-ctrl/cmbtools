@@ -62,12 +62,22 @@ import java.time.LocalDate
 
 @Composable
 fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostController) {
-    val customer by vm.customerFlow(customerId).collectAsStateWithLifecycle(initialValue = null)
-    val balance by vm.customerBalance(customerId).collectAsStateWithLifecycle(initialValue = 0L)
-    val invoices by vm.customerInvoices(customerId).collectAsStateWithLifecycle(initialValue = emptyList())
-    val payments by vm.customerPayments(customerId).collectAsStateWithLifecycle(initialValue = emptyList())
-    val ledger by vm.customerLedger(customerId).collectAsStateWithLifecycle(initialValue = emptyList())
-    val accounts by vm.customerAccounts(customerId).collectAsStateWithLifecycle(initialValue = emptyList())
+    // ⚠ هرکدام از این Flowها در هر بازترکیب ساخته می‌شدند و `collectAsStateWithLifecycle`
+    // با دیدن Flow جدید، جمع‌آوری را از صفر شروع می‌کرد (پرس‌وجوی تکراری + کندی صفحه).
+    // حالا با remember فقط یک بار ساخته می‌شوند.
+    val customerFlow = remember(customerId) { vm.customerFlow(customerId) }
+    val balanceFlow = remember(customerId) { vm.customerBalance(customerId) }
+    val invoicesFlow = remember(customerId) { vm.customerInvoices(customerId) }
+    val paymentsFlow = remember(customerId) { vm.customerPayments(customerId) }
+    val ledgerFlow = remember(customerId) { vm.customerLedger(customerId) }
+    val accountsFlow = remember(customerId) { vm.customerAccounts(customerId) }
+
+    val customer by customerFlow.collectAsStateWithLifecycle(initialValue = null)
+    val balance by balanceFlow.collectAsStateWithLifecycle(initialValue = 0L)
+    val invoices by invoicesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val payments by paymentsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val ledger by ledgerFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val accounts by accountsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val plans by vm.plans.collectAsStateWithLifecycle()
 
     var tab by remember { mutableStateOf(0) }
@@ -332,7 +342,7 @@ fun InvoiceRowCard(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column {
-            Text(number, fontWeight = FontWeight.SemiBold)
+            Text(Money.toPersian(number), fontWeight = FontWeight.SemiBold)
             Text(Jalali.formatEpochDay(epochDay), color = TextMuted, style = MaterialTheme.typography.labelMedium)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -404,7 +414,7 @@ fun PaymentDialog(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                "${inv.number} • مانده ${Money.format(inv.remainingRial, withUnit = false)}",
+                                Money.toPersian(inv.number) + " • مانده " + Money.format(inv.remainingRial, withUnit = false),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = if (invoiceId == inv.id) PrimaryCyan else TextMuted
                             )

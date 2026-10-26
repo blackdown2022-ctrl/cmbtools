@@ -181,7 +181,7 @@ fun DashboardScreen(vm: AppViewModel, nav: NavHostController) {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column {
-                                        Text("${invoice.number} • $customerName", fontWeight = FontWeight.Medium)
+                                        Text(Money.toPersian(invoice.number) + " • " + customerName, fontWeight = FontWeight.Medium)
                                         Text(
                                             Jalali.formatEpochDay(invoice.issuedAtEpochDay) + " • " + InvoiceStatus.label(invoice.status),
                                             color = statusColor(invoice.status),

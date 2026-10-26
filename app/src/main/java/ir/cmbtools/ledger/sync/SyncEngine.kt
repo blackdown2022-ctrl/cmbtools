@@ -20,6 +20,7 @@ data class SyncReport(
     val renewals: Int = 0,
     val invoicesIssued: Int = 0,
     val smsSent: Int = 0,
+    val customersCreated: Int = 0,
     val skipped: Int = 0,
     val firstRun: Boolean = false,
     val panelVersion: String = "",
@@ -31,13 +32,18 @@ data class SyncReport(
             if (firstRun) {
                 append("نخستین همگام‌سازی انجام شد؛ وضعیت ")
                 append(Money.toPersian(total.toString()))
-                append(" کاربر ثبت شد (برای کاربران قبلی فاکتور صادر نمی‌شود).")
+                append(" کاربر پنل ثبت شد")
+                if (customersCreated > 0) {
+                    append(" و ").append(Money.toPersian(customersCreated.toString())).append(" مشتری ساخته شد")
+                }
+                append(" (برای کاربران قبلی فاکتور صادر نمی‌شود).")
                 return@buildString
             }
             append(Money.toPersian(total.toString())).append(" کاربر بررسی شد")
             if (newUsers > 0) append(" • ").append(Money.toPersian(newUsers.toString())).append(" جدید")
             if (renewals > 0) append(" • ").append(Money.toPersian(renewals.toString())).append(" تمدید")
             if (invoicesIssued > 0) append(" • ").append(Money.toPersian(invoicesIssued.toString())).append(" فاکتور")
+            if (customersCreated > 0) append(" • ").append(Money.toPersian(customersCreated.toString())).append(" مشتری جدید")
             if (smsSent > 0) append(" • ").append(Money.toPersian(smsSent.toString())).append(" پیامک")
             if (skipped > 0) append(" • ").append(Money.toPersian(skipped.toString())).append(" رد شد")
         }
@@ -83,6 +89,7 @@ class SyncEngine(
         var renewals = 0
         var issued = 0
         var sms = 0
+        var createdCustomers = 0
         var skipped = 0
         val problems = mutableListOf<String>()
 
@@ -90,6 +97,17 @@ class SyncEngine(
             val old = known[u.uuid]
             var customerId = old?.customerId ?: 0L
             if (customerId <= 0) customerId = resolveCustomerId(u.comment, u.name)
+
+            // کاربر پنل که مشتری محلی ندارد: اگر «ساخت خودکار مشتری» روشن باشد، همین‌جا
+            // ساخته می‌شود — حتی وقتی فاکتور خودکار خاموش است. قبلاً فقط داخل مسیر
+            // صدور فاکتور ساخته می‌شد و کاربر نتیجه می‌گرفت «همگام‌سازی چیزی نمی‌سازد».
+            if (customerId <= 0 && settings.autoCreateCustomerFromPanel) {
+                val made = runCatching { billing.resolveOrCreateCustomer(u.name, u.comment) }.getOrNull()
+                if (made != null) {
+                    customerId = made.id
+                    createdCustomers++
+                }
+            }
 
             val newExpire = PanelClient.parseEpochDay(u.expireDate)
             val oldExpire = old?.expireEpochDay ?: 0L
@@ -114,12 +132,7 @@ class SyncEngine(
                     newExpire != lastInvoicedExpire
 
                 if (shouldInvoiceNew || shouldInvoiceRenew) {
-                    // ۱) مشتری: اتصال موجود، یا ساخت خودکار از نام کاربر پنل
-                    if (customerId <= 0) {
-                        val created = runCatching { billing.resolveOrCreateCustomer(u.name, u.comment) }.getOrNull()
-                        if (created != null) customerId = created.id
-                    }
-
+                    // ۱) مشتری: پیش‌تر در همین دور حل/ساخته شده است
                     if (customerId <= 0) {
                         skipped++
                         problems += "${u.name}: مشتری متناظر پیدا نشد"
@@ -210,6 +223,7 @@ class SyncEngine(
             renewals = renewals,
             invoicesIssued = issued,
             smsSent = sms,
+            customersCreated = createdCustomers,
             skipped = skipped,
             firstRun = firstRun,
             panelVersion = config.panelVersion,

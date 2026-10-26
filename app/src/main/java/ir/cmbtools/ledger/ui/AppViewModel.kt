@@ -276,6 +276,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         priceRial: Long,
         discountRial: Long,
         createPanelAccount: Boolean,
+        autoRenewEnabled: Boolean = false,
         sendSms: Boolean,
         dueInDays: Long,
         note: String,
@@ -286,6 +287,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         try {
             if (customerId <= 0) error("مشتری را انتخاب کنید")
             if (priceRial < 0) error("مبلغ نامعتبر است")
+            if (createPanelAccount && autoRenewEnabled && c.billing.priceFor(gb, days) == null) {
+                error("برای تمدید خودکار، بستهٔ این حجم/روز یا قیمت هر گیگ را در تنظیمات تعریف کنید")
+            }
 
             val planName = plans.value.firstOrNull { it.id == planId }?.name ?: description
             val packageLabel = description.ifBlank { planName.ifBlank { "سرویس" } }
@@ -318,7 +322,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         val provision = c.panelService.createAccount(
                             customerId = customerId,
                             gb = gb,
-                            days = days
+                            days = days,
+                            autoRenewEnabled = autoRenewEnabled
                         )
                         c.invoices.setPanelInfo(invoiceId, provision.uuid, 1, provision.subscriptionUrl)
                         result = result.copy(
@@ -723,6 +728,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         runCatching { c.panelService.setEnabled(account.panelUserUuid, !account.enabled) }
             .onSuccess { success(if (account.enabled) "اکانت غیرفعال شد" else "اکانت فعال شد") }
             .onFailure { failure(it.message ?: "خطا") }
+    }
+
+    fun setAccountAutoRenew(account: PanelAccount, enabled: Boolean) = viewModelScope.launch {
+        runCatching {
+            if (enabled && c.billing.priceFor(account.gb, account.days) == null) {
+                error("برای تمدید خودکار، بستهٔ فعلی یا قیمت هر گیگ را در تنظیمات تعریف کنید")
+            }
+            c.panelService.setAutoRenew(account.panelUserUuid, enabled)
+        }
+            .onSuccess {
+                success(if (enabled) "تمدید خودکار برای این اکانت فعال شد" else "تمدید خودکار خاموش شد")
+            }
+            .onFailure { failure(it.message ?: "ذخیرهٔ تنظیم تمدید خودکار ناموفق بود") }
     }
 
     fun extendAccount(account: PanelAccount, addGb: Double, addDays: Int) = viewModelScope.launch {

@@ -11,6 +11,7 @@ import ir.cmbtools.ledger.data.PanelConfig
 import ir.cmbtools.ledger.data.PanelDao
 import ir.cmbtools.ledger.panel.PanelClient
 import ir.cmbtools.ledger.panel.PanelException
+import ir.cmbtools.ledger.panel.PanelService
 import ir.cmbtools.ledger.panel.PanelUserDto
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -67,6 +68,7 @@ data class SyncReport(
  */
 class SyncEngine(
     private val client: PanelClient,
+    private val panelService: PanelService,
     private val panelDao: PanelDao,
     private val customerDao: CustomerDao,
     private val billing: AutoBilling,
@@ -87,7 +89,8 @@ class SyncEngine(
             )
         }
 
-        val (users, meta) = client.fetchUsers()
+        val (initialUsers, meta) = client.fetchUsers()
+        var users = initialUsers
         // پایهٔ لینک اشتراک، مستقل از مسیر ادمین است:
         // اول مقدار ذخیره‌شده در تنظیمات پنل، بعد مقدار خودِ پنل (link_domains)، بعد مقدار قدیمی.
         val linkBase = ir.cmbtools.ledger.panel.PanelUrl.normalizeLinkBase(
@@ -97,7 +100,7 @@ class SyncEngine(
         )
         val settings = prefs.current
         val firstRun = config.baselineAtMillis == 0L
-        val known = panelDao.allAccounts().associateBy { it.panelUserUuid }
+        var known = panelDao.allAccounts().associateBy { it.panelUserUuid }
 
         var linked = 0
         var newUsers = 0
@@ -107,6 +110,67 @@ class SyncEngine(
         var createdCustomers = 0
         var skipped = 0
         val problems = mutableListOf<String>()
+
+        // Renew only accounts explicitly opted in, and only after a successful panel read.
+        // After a successful renewal, refresh users before normal sync so old expiry data cannot
+        // trigger a second invoice in this same pass.
+        var panelRenewed = false
+        if (!firstRun && allowInvoicing) {
+            for (u in users) {
+                val old = known[u.uuid] ?: continue
+                if (!old.autoRenewEnabled || old.customerId <= 0 || !u.enable) continue
+                val quotaEnded = u.usageLimitGb > 0.0 && u.currentUsageGb >= u.usageLimitGb
+                val daysEnded = u.packageDays > 0 &&
+                    (u.remainingDaysOrComputed <= 0 || u.statusOrComputed.equals("expired", ignoreCase = true))
+                if (!quotaEnded && !daysEnded) continue
+
+                val gb = u.usageLimitGb.takeIf { it > 0.0 } ?: old.gb
+                val days = u.packageDays.takeIf { it > 0 } ?: old.days
+                val price = billing.priceFor(gb, days)
+                if (gb <= 0.0 || days <= 0 || price == null || old.customerId <= 0) {
+                    skipped++
+                    problems += "تمدید خودکار ${u.name}: بسته یا قیمت معتبر برای ${gb} گیگ / ${days} روز پیدا نشد"
+                    continue
+                }
+
+                val provision = runCatching { panelService.renew(u.uuid, gb, days) }.getOrElse { error ->
+                    skipped++
+                    problems += "تمدید خودکار ${u.name} انجام نشد: ${error.message ?: "خطای پنل"}"
+                    null
+                } ?: continue
+
+                panelRenewed = true
+                renewals++
+                val invoice = runCatching {
+                    billing.invoiceRenewal(
+                        customerId = old.customerId,
+                        panelUuid = u.uuid,
+                        subscriptionUrl = provision.subscriptionUrl,
+                        gb = gb,
+                        days = days,
+                        packageName = price.name,
+                        priceRial = price.priceRial,
+                        planId = price.planId
+                    )
+                }.getOrElse { error ->
+                    skipped++
+                    problems += "اکانت ${u.name} تمدید شد، اما صدور فاکتور خودکار ناموفق بود: ${error.message ?: "خطای داخلی"}"
+                    null
+                }
+                if (invoice != null && invoice.ok) {
+                    issued++
+                    if (invoice.smsSent) sms++
+                } else if (invoice != null) {
+                    skipped++
+                    problems += "اکانت ${u.name} تمدید شد، اما فاکتور صادر نشد: ${invoice.message}"
+                }
+            }
+        }
+        if (panelRenewed) {
+            val refreshed = client.fetchUsers()
+            users = refreshed.first
+            known = panelDao.allAccounts().associateBy { it.panelUserUuid }
+        }
 
         for (u in users) {
             val old = known[u.uuid]
@@ -253,7 +317,8 @@ class SyncEngine(
                     subscriptionUrl = client.subscriptionUrl(u.uuid, linkBase),
                     prevExpireEpochDay = oldExpire,
                     lastInvoicedExpireEpochDay = lastInvoicedExpire,
-                    lastRenewedAtMillis = renewedAt
+                    lastRenewedAtMillis = renewedAt,
+                    autoRenewEnabled = old?.autoRenewEnabled ?: false
                 )
             )
         }

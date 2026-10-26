@@ -253,6 +253,8 @@ data class PanelAccount(
      * هم وقتی اپ تمدید می‌کند و هم وقتی همگام‌سازی از پنل تشخیص می‌دهد پر می‌شود.
      */
     val lastRenewedAtMillis: Long = 0,
+    /** Auto-renew on depleted quota or expired days; intentionally off for all existing accounts. */
+    val autoRenewEnabled: Boolean = false,
     val syncedAt: Long = System.currentTimeMillis()
 )
 

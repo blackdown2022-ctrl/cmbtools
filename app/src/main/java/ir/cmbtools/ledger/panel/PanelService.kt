@@ -97,7 +97,8 @@ class PanelService(
     suspend fun createAccount(
         customerId: Long,
         gb: Double,
-        days: Int
+        days: Int,
+        autoRenewEnabled: Boolean = false
     ): AccountProvisionResult {
         val customer = customerDao.byId(customerId) ?: error("مشتری پیدا نشد")
         val name = customer.name
@@ -127,7 +128,8 @@ class PanelService(
                 status = user.statusOrComputed,
                 subscriptionUrl = url,
                 // فاکتور این اکانت پیش از ساخت آن در پنل صادر شده است
-                lastInvoicedExpireEpochDay = user.expireEpochDay
+                lastInvoicedExpireEpochDay = user.expireEpochDay,
+                autoRenewEnabled = autoRenewEnabled
             )
         )
         return AccountProvisionResult(
@@ -136,6 +138,14 @@ class PanelService(
             expireEpochDay = user.expireEpochDay,
             expireInDays = user.remainingDaysOrComputed
         )
+    }
+
+    suspend fun setAutoRenew(uuid: String, enabled: Boolean) {
+        val account = panelDao.byPanelUuid(uuid) ?: error("اکانت پنل پیدا نشد")
+        if (enabled && (account.customerId <= 0 || account.gb <= 0.0 || account.days <= 0)) {
+            error("برای تمدید خودکار، مشتری و بستهٔ فعلی اکانت باید مشخص باشد")
+        }
+        panelDao.upsertAccount(account.copy(autoRenewEnabled = enabled))
     }
 
     /**
@@ -190,7 +200,8 @@ class PanelService(
                 prevExpireEpochDay = existing?.expireEpochDay ?: 0,
                 // فاکتور تمدید پیش از فراخوانی این متد صادر شده است
                 lastInvoicedExpireEpochDay = user.expireEpochDay,
-                lastRenewedAtMillis = now
+                lastRenewedAtMillis = now,
+                autoRenewEnabled = existing?.autoRenewEnabled ?: false
             )
         )
         return AccountProvisionResult(

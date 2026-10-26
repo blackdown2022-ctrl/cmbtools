@@ -24,7 +24,7 @@ import ir.cmbtools.ledger.core.InvoiceNumbering
         BankSms::class,
         SmsOutbox::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -139,9 +139,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** ۶ → ۷: گزینهٔ تمدید خودکار برای هر اکانت؛ خاموش برای همهٔ داده‌های موجود. */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE panel_accounts ADD COLUMN autoRenewEnabled INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "cmb-ledger.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .build()
     }
 }

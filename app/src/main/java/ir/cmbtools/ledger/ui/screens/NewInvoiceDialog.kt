@@ -73,6 +73,7 @@ fun NewInvoiceDialog(
     var discountRial by remember { mutableStateOf(0L) }
     // پیش‌فرض از تنظیمات می‌آید: ساخت اکانت + ارسال فوری پیامک فاکتور
     var createAccount by remember { mutableStateOf(true) }
+    var autoRenewEnabled by remember { mutableStateOf(false) }
     var sendSms by remember { mutableStateOf(settings.autoSmsOnInvoice) }
     var dueDaysText by remember { mutableStateOf("0") }
     var note by remember { mutableStateOf("") }
@@ -186,6 +187,14 @@ fun NewInvoiceDialog(
                         onChange = { createAccount = it },
                         hint = "شمارهٔ مشتری در «یادداشت» کاربر پنل ثبت می‌شود"
                     )
+                    if (createAccount) {
+                        SwitchRow(
+                            title = "تمدید خودکار اکانت",
+                            checked = autoRenewEnabled,
+                            onChange = { autoRenewEnabled = it },
+                            hint = "خاموش بودن پیش‌فرض؛ با پایان حجم یا روز، همان بسته تمدید و فاکتور صادر می‌شود"
+                        )
+                    }
                     SwitchRow(
                         title = "ارسال فاکتور با پیامک",
                         checked = sendSms,
@@ -237,6 +246,7 @@ fun NewInvoiceDialog(
                         priceRial = priceRial,
                         discountRial = discountRial,
                         createPanelAccount = createAccount,
+                        autoRenewEnabled = createAccount && autoRenewEnabled,
                         sendSms = sendSms,
                         dueInDays = dueDaysText.toLongOrNull() ?: 0L,
                         note = note

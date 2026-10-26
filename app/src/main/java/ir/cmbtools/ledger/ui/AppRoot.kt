@@ -123,11 +123,14 @@ private fun FirstLaunchPermissionsPrompt(vm: AppViewModel) {
         )
     }
 
-    val sendSmsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    val smsPermissionsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+        val sendGranted = results[Manifest.permission.SEND_SMS] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+        val receiveGranted = results[Manifest.permission.RECEIVE_SMS] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
         vm.report(
-            if (granted) "مجوز ارسال پیامک فعال شد"
-            else "مجوز ارسال پیامک داده نشد؛ برای ارسال با سیم‌کارت از تنظیمات گوشی مجوز را فعال کنید",
-            isError = !granted
+            "ارسال پیامک: ${if (sendGranted) "فعال" else "خاموش"}؛ دریافت پیامک فرمان: ${if (receiveGranted) "فعال" else "خاموش"}",
+            isError = !sendGranted || !receiveGranted
         )
         val intent = BackgroundExecutionAccess.requestIntent(context)
         if (intent != null) {
@@ -139,7 +142,8 @@ private fun FirstLaunchPermissionsPrompt(vm: AppViewModel) {
     }
 
     LaunchedEffect(Unit) {
-        if (!promptPrefs.getBoolean("shown", false)) showRationale = true
+        // Versioned key: ask existing 0.8.3 users once for the newly required RECEIVE_SMS permission.
+        if (!promptPrefs.getBoolean("shown_sms_command_v1", false)) showRationale = true
     }
 
     fun requestBackgroundAccess() {
@@ -160,27 +164,30 @@ private fun FirstLaunchPermissionsPrompt(vm: AppViewModel) {
     if (showRationale) {
         AlertDialog(
             onDismissRequest = {
-                promptPrefs.edit().putBoolean("shown", true).apply()
+                promptPrefs.edit().putBoolean("shown_sms_command_v1", true).apply()
                 showRationale = false
             },
             title = { Text("اجازه‌های لازم برای پیامک و همگام‌سازی") },
             text = {
                 Text(
-                    "برای فرستادن فاکتور با سیم‌کارت، اجازهٔ ارسال پیامک لازم است. برای اینکه همگام‌سازی خودکار هنگام خاموش بودن صفحه کمتر متوقف شود، اندروید اجازهٔ جداگانهٔ فعالیت در پس‌زمینه را هم با تأیید شما می‌پرسد. برنامه نمی‌تواند این اجازه‌ها را خودش تأیید کند."
+                    "برای فرستادن فاکتور با سیم‌کارت، اجازهٔ ارسال پیامک لازم است. برای دریافت فرمان تمدید سه‌خطی از شماره‌ای که خودتان تنظیم می‌کنید نیز اجازهٔ دریافت پیامک لازم است. برای همگام‌سازی خودکار در پس‌زمینه، اندروید اجازهٔ جداگانه‌ای می‌خواهد. همهٔ اجازه‌ها را خودتان در پنجرهٔ اندروید تأیید می‌کنید؛ برنامه نمی‌تواند آن‌ها را خودکار فعال کند."
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    promptPrefs.edit().putBoolean("shown", true).apply()
+                    promptPrefs.edit().putBoolean("shown_sms_command_v1", true).apply()
                     showRationale = false
-                    val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
-                    if (granted) requestBackgroundAccess()
-                    else sendSmsLauncher.launch(Manifest.permission.SEND_SMS)
+                    val permissions = arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS)
+                    val missing = permissions.filter {
+                        ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+                    }
+                    if (missing.isEmpty()) requestBackgroundAccess()
+                    else smsPermissionsLauncher.launch(missing.toTypedArray())
                 }) { Text("درخواست اجازه‌ها") }
             },
             dismissButton = {
                 TextButton(onClick = {
-                    promptPrefs.edit().putBoolean("shown", true).apply()
+                    promptPrefs.edit().putBoolean("shown_sms_command_v1", true).apply()
                     showRationale = false
                 }) { Text("بعداً") }
             }

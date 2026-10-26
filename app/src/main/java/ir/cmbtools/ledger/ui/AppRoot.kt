@@ -94,7 +94,7 @@ data class NavItem(
  */
 private val navItems = listOf(
     NavItem("dashboard", "داشبورد", Icons.Outlined.Dashboard, Icons.Filled.Dashboard),
-    NavItem("customers", "مشتریان", Icons.Outlined.People, Icons.Filled.People),
+    NavItem("customers", "مشتری", Icons.Outlined.People, Icons.Filled.People),
     NavItem("invoices", "فاکتور", Icons.Outlined.Receipt, Icons.Filled.Receipt),
     NavItem("bank", "بانک", Icons.Outlined.AccountBalance, Icons.Filled.AccountBalance),
     NavItem("reports", "گزارش", Icons.Outlined.Assessment, Icons.Filled.Assessment),

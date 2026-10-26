@@ -34,7 +34,7 @@ data class SyncReport(
                 append(Money.toPersian(total.toString()))
                 append(" کاربر پنل ثبت شد")
                 if (customersCreated > 0) {
-                    append(" و ").append(Money.toPersian(customersCreated.toString())).append(" مشتری ساخته شد")
+                    append(" و ").append(Money.toPersian(customersCreated.toString())).append(" مشتری متصل شد")
                 }
                 append(" (برای کاربران قبلی فاکتور صادر نمی‌شود).")
                 return@buildString
@@ -43,7 +43,7 @@ data class SyncReport(
             if (newUsers > 0) append(" • ").append(Money.toPersian(newUsers.toString())).append(" جدید")
             if (renewals > 0) append(" • ").append(Money.toPersian(renewals.toString())).append(" تمدید")
             if (invoicesIssued > 0) append(" • ").append(Money.toPersian(invoicesIssued.toString())).append(" فاکتور")
-            if (customersCreated > 0) append(" • ").append(Money.toPersian(customersCreated.toString())).append(" مشتری جدید")
+            if (customersCreated > 0) append(" • ").append(Money.toPersian(customersCreated.toString())).append(" مشتری متصل")
             if (smsSent > 0) append(" • ").append(Money.toPersian(smsSent.toString())).append(" پیامک")
             if (skipped > 0) append(" • ").append(Money.toPersian(skipped.toString())).append(" رد شد")
         }

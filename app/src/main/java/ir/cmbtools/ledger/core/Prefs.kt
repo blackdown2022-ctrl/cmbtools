@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
 
-/** همهٔ تنظیمات برنامه؛ در فایل پشتیبان هم ذخیره می‌شود (نسخهٔ ۲). */
+/** تنظیمات برنامه؛ مقدارهای حساس مانند Secret ربات هنگام پشتیبان‌گیری حذف می‌شوند. */
 @Serializable
 data class AppSettings(
     val persianDigits: Boolean = true,
@@ -43,7 +43,13 @@ data class AppSettings(
     /** شمارهٔ کارت فروشگاه که در فاکتور درج می‌شود */
     val paymentCardNumber: String = "",
     /** قیمت هر گیگ برای بسته‌های بدون «بستهٔ قیمت‌دار» (ریال) — صفر = غیرفعال */
-    val pricePerGbRial: Long = 0
+    val pricePerGbRial: Long = 0,
+    /** تأیید واریزهای پیامکی از مبلغ یکتای سفارش‌های ربات فروش */
+    val botPaymentEnabled: Boolean = false,
+    /** مسیر confirm دقیق سرور salebot؛ مقدار در EncryptedSharedPreferences ذخیره می‌شود */
+    val botServerUrl: String = "",
+    /** Secret مشترک بین گوشی و سرور salebot */
+    val botApiSecret: String = ""
 ) {
     companion object {
         /**
@@ -168,7 +174,10 @@ class Prefs(context: Context) {
             autoSmsOnInvoice = sp.getBoolean("autoSmsOnInvoice", true),
             autoCreateCustomerFromPanel = sp.getBoolean("autoCreateCustomerFromPanel", true),
             paymentCardNumber = sp.getString("paymentCardNumber", "") ?: "",
-            pricePerGbRial = sp.getLong("pricePerGbRial", 0)
+            pricePerGbRial = sp.getLong("pricePerGbRial", 0),
+            botPaymentEnabled = sp.getBoolean("botPaymentEnabled", false),
+            botServerUrl = sp.getString("botServerUrl", "") ?: "",
+            botApiSecret = sp.getString("botApiSecret", "") ?: ""
         )
     }
 
@@ -198,6 +207,9 @@ class Prefs(context: Context) {
             .putBoolean("autoCreateCustomerFromPanel", next.autoCreateCustomerFromPanel)
             .putString("paymentCardNumber", next.paymentCardNumber)
             .putLong("pricePerGbRial", next.pricePerGbRial)
+            .putBoolean("botPaymentEnabled", next.botPaymentEnabled)
+            .putString("botServerUrl", next.botServerUrl)
+            .putString("botApiSecret", next.botApiSecret)
             .apply()
         _settings.value = next
     }

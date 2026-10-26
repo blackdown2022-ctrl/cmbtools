@@ -118,6 +118,27 @@ class BankSmsParserTest {
         assertTrue(parsed.isOtp)
         assertFalse(parsed.isCredit)
     }
+
+    @Test
+    fun bot_only_accepts_known_bank_credit_with_reference() {
+        val valid = BankSmsParser.parse(
+            "bankmellat",
+            "واریز: ۱۲۰۰۰۰ ریال\nکد پیگیری: 12345678",
+            0
+        )
+        assertTrue(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(valid))
+
+        val missingReference = BankSmsParser.parse("bankmellat", "واریز: ۱۲۰۰۰۰ ریال", 0)
+        val unknownBank = BankSmsParser.parse("999999", "واریز: ۱۲۰۰۰۰ ریال\nکد پیگیری: 12345678", 0)
+        val reversal = BankSmsParser.parse(
+            "bankmellat",
+            "واریز: ۱۲۰۰۰۰ ریال\nکد پیگیری: 12345678\nبرگشت وجه",
+            0
+        )
+        assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(missingReference))
+        assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(unknownBank))
+        assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(reversal))
+    }
 }
 
 class SmsTemplateTest {

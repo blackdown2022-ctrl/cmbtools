@@ -68,6 +68,7 @@ import ir.cmbtools.ledger.AppContainer
 import ir.cmbtools.ledger.LedgerApp
 import ir.cmbtools.ledger.Notifications
 import ir.cmbtools.ledger.ui.screens.BankSmsScreen
+import ir.cmbtools.ledger.ui.screens.BotPaymentsScreen
 import ir.cmbtools.ledger.ui.screens.CustomerDetailScreen
 import ir.cmbtools.ledger.ui.screens.CustomersScreen
 import ir.cmbtools.ledger.ui.screens.DashboardScreen
@@ -211,6 +212,7 @@ private fun AppNavHost(navController: NavHostController, vm: AppViewModel) {
             )
         }
         composable("bank") { BankSmsScreen(vm, navController) }
+        composable("bot") { BotPaymentsScreen(vm, navController) }
         composable("reports") { ReportsScreen(vm, navController) }
         composable("settings") { SettingsScreen(vm, navController) }
         composable("plans") { PlansScreen(vm, navController) }

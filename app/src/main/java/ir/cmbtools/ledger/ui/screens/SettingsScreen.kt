@@ -47,6 +47,7 @@ import ir.cmbtools.ledger.core.Money
 import ir.cmbtools.ledger.core.SmsGatewayProvider
 import ir.cmbtools.ledger.core.SmsMode
 import ir.cmbtools.ledger.export.ExportManager
+import ir.cmbtools.ledger.panel.PanelUrl
 import ir.cmbtools.ledger.ui.AppViewModel
 import ir.cmbtools.ledger.ui.common.AmountField
 import ir.cmbtools.ledger.ui.common.DropdownField
@@ -65,20 +66,24 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
     val panelStatus by vm.panelStatus.collectAsStateWithLifecycle()
     val panelChecks by vm.panelChecks.collectAsStateWithLifecycle()
     val accounts by vm.panelAccounts.collectAsStateWithLifecycle()
+    val panelEndpoints by vm.panelEndpoints.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    var host by remember { mutableStateOf(config?.host ?: "") }
-    var path by remember { mutableStateOf(config?.adminProxyPath ?: "") }
+    // سه فیلد مستقل و صریح (بازطراحی ۰.۳.۱):
+    //   آدرس کامل پنل  ← همان آدرس مرورگر (مسیر ادمین از آن استخراج می‌شود)
+    //   کلید API      ← UUID ادمین
+    //   پایهٔ لینک اشتراک ← آدرس جدا برای کانفیگ مشتری (خالی = خودکار از پنل)
+    var panelUrl by remember { mutableStateOf(config?.panelUrl ?: "") }
     var apiKey by remember { mutableStateOf(config?.apiKey ?: "") }
-    var useHttps by remember { mutableStateOf(config?.useHttps ?: true) }
+    var subBase by remember { mutableStateOf(config?.subscriptionBase ?: "") }
     var panelName by remember { mutableStateOf(config?.name ?: "پنل اصلی") }
+    var showEndpoints by remember { mutableStateOf(true) }
 
     var businessName by remember { mutableStateOf(settings.businessName) }
     var footer by remember { mutableStateOf(settings.invoiceFooter) }
     var template by remember { mutableStateOf(settings.invoiceTemplate) }
     var gatewayKey by remember { mutableStateOf(settings.gatewayApiKey) }
     var gatewaySender by remember { mutableStateOf(settings.gatewaySender) }
-    var fallbackLink by remember { mutableStateOf(settings.fallbackSubscriptionBase) }
     var autoMatchMax by remember { mutableStateOf(settings.autoMatchMaxRial) }
     var cardNumber by remember { mutableStateOf(settings.paymentCardNumber) }
     var pricePerGb by remember { mutableStateOf(settings.pricePerGbRial) }
@@ -86,11 +91,11 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
 
     LaunchedEffect(config) {
         config?.let {
-            host = it.host
-            path = it.adminProxyPath
+            panelUrl = it.panelUrl
             apiKey = it.apiKey
-            useHttps = it.useHttps
+            subBase = it.subscriptionBase
             panelName = it.name
+            vm.refreshPanelEndpoints()
         }
     }
 
@@ -124,47 +129,87 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            SectionCard(title = "اتصال به پنل هیدی‌فای ۱۴") {
-                LabeledField("نام (مثلاً سرور آلمان)", panelName, { panelName = it })
-                Spacer(Modifier.height(8.dp))
-                LabeledField("دامنهٔ پنل", host, { host = it }, placeholder = "panel.example.com")
-                Spacer(Modifier.height(8.dp))
-                LabeledField(
-                    "مسیر پروکسی ادمین",
-                    path,
-                    { path = it },
-                    placeholder = "از تنظیمات ← تنظیمات خیلی پیشرفته"
+            // ─────────────────────────────────────────────────────────────
+            // اتصال پنل — بازطراحی کامل فیلدها (نسخهٔ ۰.۳.۱)
+            // سه چیز که در هیدی‌فای از سه جای متفاوت می‌آید، اینجا سه فیلد جدا دارند:
+            //   ۱) آدرس پنل (همان آدرس مرورگر) → مسیر ادمین و آدرس ساخت کاربر از آن ساخته می‌شود
+            //   ۲) کلید API (UUID ادمین)
+            //   ۳) پایهٔ لینک اشتراک (مستقل از مسیر ادمین)
+            // ─────────────────────────────────────────────────────────────
+            SectionCard(title = "اتصال به پنل هیدی‌فای") {
+                Text(
+                    "برای اینکه ساخت کاربر و لینک اشتراک درست کار کند، این سه مورد را پر کنید. " +
+                        "مقدار «آدرس ساخت کاربر» و «لینک اشتراک» را پایین همین کارت می‌بینید؛ " +
+                        "هیچ‌کدام دیگر پنهان نیست.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
+
                 LabeledField(
-                    "کلید API (UUID ادمین)",
+                    "۱) آدرس پنل (همان که در مرورگر باز می‌کنید)",
+                    panelUrl,
+                    { panelUrl = it },
+                    placeholder = "https://panel.example.com/AbCdEf12"
+                )
+                Text(
+                    "آدرس را از نوار آدرس مرورگر کپی کنید؛ اگر پنل را با /admin یا با لینک API باز کرده‌اید، " +
+                        "همان را بچسبانید — اپ مسیر پروکسی ادمین را خودش جدا می‌کند.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
+
+                Spacer(Modifier.height(10.dp))
+                LabeledField(
+                    "۲) کلید API (UUID ادمین)",
                     apiKey,
                     { apiKey = it },
                     placeholder = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 )
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("استفاده از HTTPS")
-                    Switch(checked = useHttps, onCheckedChange = { useHttps = it })
+                Text(
+                    "در پنل: «ادمین‌ها» → ردیف حساب خودتان → کلید API. این کلید در هدر Hiddify-API-Key فرستاده می‌شود.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
+
+                Spacer(Modifier.height(10.dp))
+                LabeledField(
+                    "۳) پایهٔ لینک اشتراک مشتری (اختیاری)",
+                    subBase,
+                    { subBase = it },
+                    placeholder = "https://panel.example.com/x7Yz12/"
+                )
+                Text(
+                    "این آدرس با «آدرس پنل» فرق دارد و در هیدی‌فای از proxy_path_client ساخته می‌شود. " +
+                        "اگر خالی بگذارید، بعد از تست اتصال خودکار از خود پنل خوانده می‌شود؛ " +
+                        "لینک هر مشتری = همین آدرس + شناسهٔ کاربر + /",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextButton(onClick = { subBase = "" }) { Text("خالی کردن (خودکار از پنل)") }
+                    if (subBase.isBlank()) {
+                        TextButton(onClick = { vm.testPanel() }) { Text("خواندن از پنل الان") }
+                    }
                 }
-                Spacer(Modifier.height(8.dp))
-                // چیدمان دو-ستونی روی گوشی باریک به یک-ستونی تبدیل می‌شود (ریسپانسیو)
+
+                Spacer(Modifier.height(6.dp))
+                LabeledField("نام پنل (برای خودتان)", panelName, { panelName = it })
+
+                Spacer(Modifier.height(10.dp))
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    val narrow = maxWidth < 340.dp
+                    val narrow = maxWidth < 360.dp
                     if (narrow) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
-                                onClick = {
-                                    vm.savePanelConfig(host, path, apiKey, useHttps, panelName) { vm.testPanel() }
-                                },
+                                onClick = { vm.savePanelConfig(panelUrl, apiKey, subBase, panelName) { vm.testPanel() } },
                                 modifier = Modifier.fillMaxWidth()
                             ) { Text("ذخیره و تست اتصال") }
+                            OutlinedButton(onClick = { vm.probePanelCreate() }, modifier = Modifier.fillMaxWidth()) {
+                                Text("تست ساخت کاربر در پنل")
+                            }
                             OutlinedButton(onClick = { vm.diagnosePanel() }, modifier = Modifier.fillMaxWidth()) {
-                                Text("عیب‌یابی کامل اتصال")
+                                Text("عیب‌یابی کامل")
                             }
                             OutlinedButton(onClick = { vm.syncPanel() }, modifier = Modifier.fillMaxWidth()) {
                                 Text("همگام‌سازی الان")
@@ -174,28 +219,67 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(
-                                    onClick = {
-                                        vm.savePanelConfig(host, path, apiKey, useHttps, panelName) { vm.testPanel() }
-                                    },
+                                    onClick = { vm.savePanelConfig(panelUrl, apiKey, subBase, panelName) { vm.testPanel() } },
                                     modifier = Modifier.weight(1f)
                                 ) { Text("ذخیره و تست") }
+                                OutlinedButton(onClick = { vm.probePanelCreate() }, modifier = Modifier.weight(1f)) {
+                                    Text("تست ساخت کاربر")
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = { vm.diagnosePanel() }, modifier = Modifier.weight(1f)) {
                                     Text("عیب‌یابی")
                                 }
-                            }
-                            OutlinedButton(onClick = { vm.syncPanel() }, modifier = Modifier.fillMaxWidth()) {
-                                Text("همگام‌سازی الان با پنل")
+                                OutlinedButton(onClick = { vm.syncPanel() }, modifier = Modifier.weight(1f)) {
+                                    Text("همگام‌سازی")
+                                }
                             }
                         }
                     }
                 }
+
                 if (panelStatus.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
                     Text(panelStatus, color = PrimaryCyan, style = MaterialTheme.typography.labelMedium)
                 }
+
+                // ── آدرس‌های دقیق: چیزی پنهان نماند ──
+                Spacer(Modifier.height(10.dp))
+                TextButton(onClick = { showEndpoints = !showEndpoints }) {
+                    Text(if (showEndpoints) "بستن آدرس‌های دقیق ▲" else "دیدن آدرس‌های دقیق ▼")
+                }
+                if (showEndpoints) {
+                    // همین حالا و از همان چیزی که در فیلدهاست محاسبه می‌شود تا کاربر
+                    // قبل از ذخیره هم ببیند دقیقاً چه آدرسی فرستاده می‌شود.
+                    val parts = PanelUrl.normalize(panelUrl, "")
+                    val api = if (parts.proxyPath.isBlank()) "" else parts.panelUrl + "/api/v2/"
+                    val linkBase = PanelUrl.normalizeLinkBase(subBase)
+                        .ifBlank { panelEndpoints.subscriptionBase }
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        EndpointLine("آدرس پنل", if (parts.host.isBlank()) "—" else parts.panelUrl)
+                        EndpointLine(
+                            "مسیر پروکسی ادمین",
+                            parts.proxyPath.ifBlank { "— (از آدرس پنل پیدا نشد)" }
+                        )
+                        EndpointLine("پایهٔ API", api.ifBlank { "—" })
+                        EndpointLine("ساخت کاربر (POST)", if (api.isBlank()) "—" else api + "admin/users/")
+                        EndpointLine("ویرایش/حذف کاربر", if (api.isBlank()) "—" else api + "admin/users/<uuid>/")
+                        EndpointLine(
+                            "پایهٔ لینک اشتراک",
+                            linkBase.ifBlank { "— (بعد از تست، خودکار از پنل پر می‌شود)" }
+                        )
+                        if (linkBase.isNotBlank()) {
+                            EndpointLine(
+                                "نمونهٔ لینک مشتری",
+                                linkBase + "00000000-0000-0000-0000-000000000000/"
+                            )
+                        }
+                    }
+                }
+
                 if (panelChecks.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Text("نتیجهٔ عیب‌یابی:", style = MaterialTheme.typography.labelLarge)
+                    Text("نتیجهٔ بررسی:", style = MaterialTheme.typography.labelLarge)
                     panelChecks.forEach { check ->
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
@@ -213,27 +297,18 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                             }
                         }
                     }
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedButton(onClick = { vm.copyPanelReport() }, modifier = Modifier.fillMaxWidth()) {
+                        Text("کپی گزارش برای ارسال")
+                    }
                 }
+
                 if (config?.panelVersion?.isNotBlank() == true) {
                     Text(
                         "نسخهٔ پنل: " + Money.toPersian(config?.panelVersion ?: ""),
                         color = TextMuted, style = MaterialTheme.typography.labelMedium
                     )
                 }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "آدرس API: https://<دامنه>/<مسیر پروکسی>/api/v2/admin/  •  هدر: Hiddify-API-Key",
-                    color = TextMuted,
-                    style = MaterialTheme.typography.labelMedium
-                )
-                Spacer(Modifier.height(8.dp))
-                LabeledField(
-                    "پایهٔ لینک اشتراک (اگر پنل در دسترس نبود)",
-                    fallbackLink,
-                    { fallbackLink = it },
-                    placeholder = "https://panel.example.com/AbCdEf/"
-                )
-                Spacer(Modifier.height(8.dp))
                 Text(
                     "اکانت‌های همگام‌شده: " + Money.toPersian(accounts.size.toString()),
                     color = TextMuted,
@@ -388,8 +463,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                                 gatewayApiKey = gatewayKey,
                                 gatewaySender = gatewaySender,
                                 invoiceTemplate = template,
-                                invoiceFooter = footer,
-                                fallbackSubscriptionBase = fallbackLink
+                                invoiceFooter = footer
                             )
                         }
                     },
@@ -574,5 +648,18 @@ private fun SwitchLine(
             if (hint != null) Text(hint, color = TextMuted, style = MaterialTheme.typography.labelMedium)
         }
         Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+
+/**
+ * یک خط «برچسب + آدرس» برای نمایش آدرس‌های دقیق پنل.
+ * آدرس‌ها لاتین‌اند و جدا از برچسب فارسی نمایش داده می‌شوند تا قاطی نشوند.
+ */
+@Composable
+private fun EndpointLine(label: String, value: String) {
+    Column(Modifier.fillMaxWidth()) {
+        Text(label, color = TextMuted, style = MaterialTheme.typography.labelMedium)
+        Text(value, style = MaterialTheme.typography.bodySmall)
     }
 }

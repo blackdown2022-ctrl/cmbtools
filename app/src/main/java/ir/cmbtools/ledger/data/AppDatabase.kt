@@ -22,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         BankSms::class,
         SmsOutbox::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -66,9 +66,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+
+        /**
+         * ۲ → ۳ : پایهٔ لینک اشتراک به‌عنوان فیلد مستقل پنل (جدا از مسیر ادمین).
+         * ستون مقدار پیش‌فرض دارد، پس دادهٔ قبلی حفظ می‌شود و تا اولین اتصال موفق،
+         * اپ از `fallbackSubscriptionBase` تنظیمات استفاده می‌کند.
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE panel_configs ADD COLUMN subscriptionBase TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "cmb-ledger.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .fallbackToDestructiveMigration()
                 .build()
     }

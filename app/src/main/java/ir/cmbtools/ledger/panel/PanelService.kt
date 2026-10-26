@@ -28,23 +28,47 @@ class PanelService(
     suspend fun config(): PanelConfig = panelDao.config() ?: PanelConfig()
     suspend fun isConfigured(): Boolean = (panelDao.config() ?: PanelConfig()).isConfigured
 
-    suspend fun saveConfig(host: String, adminProxyPath: String, apiKey: String, useHttps: Boolean, name: String) {
+    /**
+     * ذخیرهٔ اتصال از سه فیلد مستقل:
+     *  • `panelUrl` — آدرس کامل پنل در مرورگر (مسیر ادمین از همین استخراج می‌شود)
+     *  • `apiKey`   — UUID ادمین
+     *  • `subscriptionBase` — پایهٔ لینک اشتراک مشتری (مستقل از مسیر ادمین؛ خالی = خودکار)
+     */
+    suspend fun saveConfig(panelUrl: String, apiKey: String, subscriptionBase: String, name: String) {
         val existing = panelDao.config() ?: PanelConfig()
-        // آدرس کاربر تمیز می‌شود: ممکن است کل لینک API را در فیلد «دامنه» چسبانده باشد
-        val parts = PanelUrl.normalize(host, adminProxyPath, useHttps)
+        val parts = PanelUrl.normalize(panelUrl, "", existing.useHttps)
         panelDao.saveConfig(
             existing.copy(
-                name = name,
+                name = name.ifBlank { "پنل اصلی" },
                 host = parts.host,
                 adminProxyPath = parts.proxyPath,
                 apiKey = apiKey.trim(),
-                useHttps = parts.useHttps
+                useHttps = parts.useHttps,
+                subscriptionBase = PanelUrl.normalizeLinkBase(subscriptionBase)
             )
         )
     }
 
+    /** ذخیرهٔ فقط پایهٔ لینک اشتراک (بعد از خواندن خودکار از پنل) */
+    suspend fun saveSubscriptionBase(base: String) {
+        val existing = panelDao.config() ?: PanelConfig()
+        panelDao.saveConfig(existing.copy(subscriptionBase = PanelUrl.normalizeLinkBase(base)))
+    }
+
+    /** آدرس‌های دقیقی که استفاده می‌شوند (برای نمایش در تنظیمات) */
+    suspend fun endpoints(): PanelEndpoints = client.endpointsNow()
+
     /** عیب‌یابی گام‌به‌گام اتصال پنل (برای نمایش در تنظیمات) */
     suspend fun diagnose(): List<PanelCheck> = client.diagnose()
+
+    /** ساخت واقعی یک کاربر آزمایشی و پاک کردن آن — قطعی‌ترین آزمون «ساخت کاربر» */
+    suspend fun probeCreate(): PanelCheck = client.probeCreate()
+
+    /** متن گزارش برای کپی کردن */
+    suspend fun report(checks: List<PanelCheck>): String =
+        client.reportText(checks, panelDao.config() ?: PanelConfig())
+
+    suspend fun lastRawError(): String = client.lastRawError
 
     suspend fun test(): PanelConnection = client.testConnection()
 
@@ -76,10 +100,7 @@ class PanelService(
             days = days,
             comment = comment
         )
-        val linkBase = (runCatching { client.fetchUsers().second.linkDomains.firstOrNull()?.base }.getOrNull())
-            ?: prefs.current.fallbackSubscriptionBase
-        val url = client.subscriptionUrl(user.uuid, linkBase)
-
+        val url = client.subscriptionUrl(user.uuid, linkBaseForCurrent())
         panelDao.upsertAccount(
             PanelAccount(
                 customerId = customerId,
@@ -105,11 +126,31 @@ class PanelService(
         )
     }
 
+    /**
+     * پایهٔ لینک اشتراک برای این لحظه:
+     *  ۱) مقدار ذخیره‌شده در تنظیمات پنل (اگر ادمین خودش وارد کرده باشد)
+     *  ۲) کشف مجدد از خود پنل (دیگر لازم نیست کاربر چیزی حدس بزند)
+     *  ۳) مقدار قدیمی تنظیمات
+     */
+    private suspend fun linkBaseForCurrent(): String {
+        val saved = PanelUrl.normalizeLinkBase((panelDao.config() ?: PanelConfig()).subscriptionBase)
+        if (saved.isNotBlank()) return saved
+        val discovered = runCatching {
+            PanelUrl.normalizeLinkBase(client.fetchUsers().second.linkDomains.firstOrNull()?.base ?: "")
+        }.getOrNull().orEmpty()
+        if (discovered.isNotBlank()) {
+            runCatching { saveSubscriptionBase(discovered) }
+            return discovered
+        }
+        return PanelUrl.normalizeLinkBase(prefs.current.fallbackSubscriptionBase)
+    }
+
     /** تمدید دورهٔ جدید برای اکانت موجود مشتری */
     suspend fun renew(uuid: String, gb: Double, days: Int): AccountProvisionResult {
         val user = client.renewPackage(uuid, gb, days)
         val existing = panelDao.byPanelUuid(uuid)
-        val url = existing?.subscriptionUrl ?: client.subscriptionUrl(uuid, prefs.current.fallbackSubscriptionBase)
+        val url = existing?.subscriptionUrl?.takeIf { it.isNotBlank() }
+            ?: client.subscriptionUrl(uuid, linkBaseForCurrent())
         panelDao.upsertAccount(
             PanelAccount(
                 id = existing?.id ?: 0,

@@ -358,6 +358,65 @@ class PanelUrlTest {
         assertEquals("192.168.1.10:8000", p.host)
         assertFalse(p.useHttps)
     }
+
+    @Test
+    fun panel_url_with_admin_suffix_gives_same_proxy_path() {
+        // آدرسی که در مرورگر با /admin باز می‌شود
+        val a = PanelUrl.normalize("https://panel.example.com/AbCdEf12/admin/", "")
+        assertEquals("panel.example.com", a.host)
+        assertEquals("AbCdEf12", a.proxyPath)
+        assertEquals("https://panel.example.com/AbCdEf12", a.panelUrl)
+    }
+
+    @Test
+    fun browser_url_with_admin_and_hash_is_understood() {
+        // آدرسی که معمولاً در مرورگر دیده می‌شود: /AbCdEf12/admin/#/users
+        val a = PanelUrl.normalize("https://panel.example.com/AbCdEf12/admin/#/users", "")
+        assertEquals("AbCdEf12", a.proxyPath)
+        assertEquals("panel.example.com", a.host)
+        assertEquals("https://panel.example.com/AbCdEf12", a.panelUrl)
+        // و بدون اسلش/کوِری
+        assertEquals("AbCdEf12", PanelUrl.cleanPath("AbCdEf12/admin/?x=1"))
+    }
+
+    @Test
+    fun create_user_url_is_built_from_admin_path() {
+        // «آدرس ساخت کاربر» همیشه زیر مسیر ادمین است، نه مسیر اشتراک
+        val a = PanelUrl.normalize("https://panel.example.com/AbCdEf12", "")
+        assertEquals(
+            "https://panel.example.com/AbCdEf12/api/v2/admin/users/",
+            a.panelUrl + "/api/v2/admin/users/"
+        )
+    }
+
+    @Test
+    fun subscription_base_is_normalized_separately() {
+        // پایهٔ لینک اشتراک چیز مستقلی است و با مسیر ادمین یکی نمی‌شود
+        assertEquals("https://sub.example.com/xy12/", PanelUrl.normalizeLinkBase("sub.example.com/xy12"))
+        assertEquals("https://sub.example.com/xy12/", PanelUrl.normalizeLinkBase("https://sub.example.com/xy12/"))
+        assertEquals("", PanelUrl.normalizeLinkBase("   "))
+        assertEquals("http://95.1.2.3:8080/x/", PanelUrl.normalizeLinkBase("http://95.1.2.3:8080/x"))
+    }
+
+    @Test
+    fun customer_link_is_base_plus_uuid() {
+        val uuid = "11111111-2222-3333-4444-555555555555"
+        val base = PanelUrl.normalizeLinkBase("https://sub.example.com/xy12/")
+        assertEquals("https://sub.example.com/xy12/$uuid/", base + uuid + "/")
+    }
+
+    @Test
+    fun panel_config_keeps_api_and_link_bases_apart() {
+        val config = ir.cmbtools.ledger.data.PanelConfig(
+            host = "panel.example.com",
+            adminProxyPath = "AbCdEf12",
+            apiKey = "key",
+            subscriptionBase = "https://sub.example.com/xy12/"
+        )
+        assertEquals("https://panel.example.com/AbCdEf12", config.panelUrl)
+        // مسیر ادمین در لینک اشتراک تکرار نمی‌شود
+        assertFalse(config.subscriptionBase.contains("AbCdEf12"))
+    }
 }
 
 class MoneyGroupingTest {

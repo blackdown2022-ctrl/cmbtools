@@ -30,16 +30,21 @@ class PanelService(
 
     suspend fun saveConfig(host: String, adminProxyPath: String, apiKey: String, useHttps: Boolean, name: String) {
         val existing = panelDao.config() ?: PanelConfig()
+        // آدرس کاربر تمیز می‌شود: ممکن است کل لینک API را در فیلد «دامنه» چسبانده باشد
+        val parts = PanelUrl.normalize(host, adminProxyPath, useHttps)
         panelDao.saveConfig(
             existing.copy(
                 name = name,
-                host = host.trim(),
-                adminProxyPath = adminProxyPath.trim().trim('/'),
+                host = parts.host,
+                adminProxyPath = parts.proxyPath,
                 apiKey = apiKey.trim(),
-                useHttps = useHttps
+                useHttps = parts.useHttps
             )
         )
     }
+
+    /** عیب‌یابی گام‌به‌گام اتصال پنل (برای نمایش در تنظیمات) */
+    suspend fun diagnose(): List<PanelCheck> = client.diagnose()
 
     suspend fun test(): PanelConnection = client.testConnection()
 

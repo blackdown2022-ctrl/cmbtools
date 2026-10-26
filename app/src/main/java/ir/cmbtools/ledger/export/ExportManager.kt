@@ -112,6 +112,8 @@ class ExportManager(
     private suspend fun buildBackupFile(): File {
         val dao = container.backupDao()
         val payload = BackupPayload(
+            version = 2,
+            appVersion = ir.cmbtools.ledger.BuildConfig.VERSION_NAME,
             customers = dao.allCustomers(),
             plans = dao.allPlans(),
             invoices = dao.allInvoices(),
@@ -120,8 +122,12 @@ class ExportManager(
             allocations = dao.allAllocations(),
             ledger = dao.allLedger(),
             expenses = dao.allExpenses(),
+            // ↓ مواردی که در نسخهٔ قبل در فایل پشتیبان نبودند
+            panelConfig = dao.allPanelConfigs().firstOrNull(),
             panelAccounts = dao.allPanelAccounts(),
-            bankSms = dao.allBankSms()
+            bankSms = dao.allBankSms(),
+            smsOutbox = dao.allOutbox(),
+            settings = container.prefs.current
         )
         val file = File(exportsDir(), "backup_${stamp()}.json")
         file.writeText(json.encodeToString(BackupPayload.serializer(), payload))
@@ -135,6 +141,21 @@ class ExportManager(
             val payload = json.decodeFromString(BackupPayload.serializer(), text)
             container.db.withTransaction {
                 container.backupDao().replaceAll(payload)
+            }
+            // تنظیمات برنامه (پیامک/فاکتور/همگام‌سازی/قفل/...) هم بازیابی می‌شوند
+            payload.settings?.let { saved ->
+                container.prefs.update { current ->
+                    // پین قفل و کلیدهای امنیتی عمداً از فایل پشتیبان می‌آیند تا بازیابی کامل باشد،
+                    // ولی اگر فایل قدیمی این فیلدها را نداشت، مقدار فعلی حفظ می‌شود.
+                    saved.copy(
+                        lockPin = saved.lockPin.ifBlank { current.lockPin },
+                        lockEnabled = saved.lockEnabled
+                    )
+                }
+            }
+            // اگر تنظیمات پنل تازه بازیابی شد، سرویس همگام‌سازی از نو راه بیفتد
+            withContext(Dispatchers.Main) {
+                runCatching { ir.cmbtools.ledger.sync.AutoSyncController.refresh(context) }
             }
             payload
         }

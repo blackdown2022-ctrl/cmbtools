@@ -4,7 +4,9 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -61,6 +63,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val config by vm.panelConfig.collectAsStateWithLifecycle()
     val panelStatus by vm.panelStatus.collectAsStateWithLifecycle()
+    val panelChecks by vm.panelChecks.collectAsStateWithLifecycle()
     val accounts by vm.panelAccounts.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -78,7 +81,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
     var fallbackLink by remember { mutableStateOf(settings.fallbackSubscriptionBase) }
     var autoMatchMax by remember { mutableStateOf(settings.autoMatchMaxRial) }
     var cardNumber by remember { mutableStateOf(settings.paymentCardNumber) }
-    var pricePerGbText by remember { mutableStateOf(settings.pricePerGbRial.toString()) }
+    var pricePerGb by remember { mutableStateOf(settings.pricePerGbRial) }
     var pin by remember { mutableStateOf("") }
 
     LaunchedEffect(config) {
@@ -96,7 +99,13 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
         if (uri != null) {
             scope.launch {
                 ExportManager(context, vm.appContainer()).importBackup(uri)
-                    .onSuccess { vm.report("بازیابی انجام شد: ${Money.toPersian(it.customers.size.toString())} مشتری") }
+                    .onSuccess {
+                        vm.report(
+                            "بازیابی کامل شد: " + Money.toPersian(it.customers.size.toString()) + " مشتری" +
+                                (if (it.settings != null) " + تنظیمات" else " (فایل قدیمی، بدون تنظیمات)") +
+                                (if (it.panelConfig != null) " + اتصال پنل" else "")
+                        )
+                    }
                     .onFailure { vm.report("بازیابی ناموفق: ${it.message}", isError = true) }
             }
         }
@@ -105,12 +114,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
     Column(Modifier.fillMaxSize()) {
         GradientHeader(
             title = "تنظیمات",
-            subtitle = "پنل، پیامک، امنیت و داده‌ها",
-            action = {
-                IconButton(onClick = { nav.popBackStack() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت", tint = TextMuted)
-                }
-            }
+            subtitle = "پنل هیدی‌فای، پیامک، فاکتور، همگام‌سازی و پشتیبان"
         )
 
         Column(
@@ -148,20 +152,67 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     Switch(checked = useHttps, onCheckedChange = { useHttps = it })
                 }
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = {
-                            vm.savePanelConfig(host, path, apiKey, useHttps, panelName) { vm.testPanel() }
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) { Text("ذخیره و تست") }
-                    OutlinedButton(onClick = { vm.syncPanel() }, modifier = Modifier.weight(1f)) {
-                        Text("همگام‌سازی")
+                // چیدمان دو-ستونی روی گوشی باریک به یک-ستونی تبدیل می‌شود (ریسپانسیو)
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val narrow = maxWidth < 340.dp
+                    if (narrow) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    vm.savePanelConfig(host, path, apiKey, useHttps, panelName) { vm.testPanel() }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("ذخیره و تست اتصال") }
+                            OutlinedButton(onClick = { vm.diagnosePanel() }, modifier = Modifier.fillMaxWidth()) {
+                                Text("عیب‌یابی کامل اتصال")
+                            }
+                            OutlinedButton(onClick = { vm.syncPanel() }, modifier = Modifier.fillMaxWidth()) {
+                                Text("همگام‌سازی الان")
+                            }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = {
+                                        vm.savePanelConfig(host, path, apiKey, useHttps, panelName) { vm.testPanel() }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("ذخیره و تست") }
+                                OutlinedButton(onClick = { vm.diagnosePanel() }, modifier = Modifier.weight(1f)) {
+                                    Text("عیب‌یابی")
+                                }
+                            }
+                            OutlinedButton(onClick = { vm.syncPanel() }, modifier = Modifier.fillMaxWidth()) {
+                                Text("همگام‌سازی الان با پنل")
+                            }
+                        }
                     }
                 }
                 if (panelStatus.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
                     Text(panelStatus, color = PrimaryCyan, style = MaterialTheme.typography.labelMedium)
+                }
+                if (panelChecks.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("نتیجهٔ عیب‌یابی:", style = MaterialTheme.typography.labelLarge)
+                    panelChecks.forEach { check ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Text(if (check.ok) "✅" else "❌", style = MaterialTheme.typography.bodyMedium)
+                            Spacer(Modifier.width(6.dp))
+                            Column {
+                                Text(check.title, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    check.detail,
+                                    color = if (check.ok) TextMuted else MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
+                    }
                 }
                 if (config?.panelVersion?.isNotBlank() == true) {
                     Text(
@@ -254,11 +305,10 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     placeholder = "6037-9977-1234-5678"
                 )
                 Spacer(Modifier.height(8.dp))
-                LabeledField(
+                AmountField(
                     "قیمت هر گیگ (ریال) — برای بسته‌های بدون قیمت",
-                    pricePerGbText,
-                    { pricePerGbText = it.filter { ch -> ch.isDigit() } },
-                    keyboardType = KeyboardType.Number
+                    pricePerGb,
+                    { pricePerGb = it }
                 )
                 Text(
                     "اگر حجم/روز اکانت با هیچ بسته‌ای در صفحهٔ «بسته‌ها» نخواند، فاکتور با این نرخ ساخته می‌شود. صفر = غیرفعال.",
@@ -272,7 +322,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                             vm.updateSettings {
                                 it.copy(
                                     paymentCardNumber = cardNumber.trim(),
-                                    pricePerGbRial = pricePerGbText.toLongOrNull() ?: 0L
+                                    pricePerGbRial = pricePerGb
                                 )
                             }
                             vm.report("تنظیمات فاکتور خودکار ذخیره شد")
@@ -433,16 +483,35 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 }
             }
 
-            SectionCard(title = "داده‌ها و پشتیبان") {
-                OutlinedButton(
+            SectionCard(title = "پشتیبان‌گیری و بازیابی") {
+                Text(
+                    "این تنها جای پشتیبان‌گیری برنامه است. فایل JSON شامل همهٔ این‌ها است:",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(6.dp))
+                listOf(
+                    "مشتریان، بسته‌ها، فاکتورها و اقلام فاکتور",
+                    "پرداخت‌ها، ثبت‌های دفتر، هزینه‌ها",
+                    "تنظیمات اتصال پنل هیدی‌فای (دامنه، مسیر پروکسی، کلید API)",
+                    "اکانت‌های همگام‌شدهٔ پنل",
+                    "همهٔ تنظیمات برنامه: پیامک، قالب فاکتور، نام کسب‌وکار، شمارهٔ کارت، رقم‌بندی، همگام‌سازی خودکار، رمز قفل",
+                    "پیامک‌های بانکی و تاریخچهٔ پیامک‌های ارسالی"
+                ).forEach { line ->
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
+                        Text("• ", color = PrimaryCyan, style = MaterialTheme.typography.bodyMedium)
+                        Text(line, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Button(
                     onClick = {
                         ExportManager(context, vm.appContainer()).exportBackup { r ->
-                            r.onSuccess { vm.report("پشتیبان ساخته شد") }
+                            r.onSuccess { vm.report("پشتیبان کامل ساخته شد: " + it.name) }
                                 .onFailure { vm.report("ناموفق: ${it.message}", isError = true) }
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("پشتیبان کامل (JSON)") }
+                ) { Text("ساخت فایل پشتیبان کامل (JSON)") }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
@@ -450,7 +519,8 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 ) { Text("بازیابی از فایل پشتیبان") }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "پشتیبان روزانه را در Google Drive/تلگرام خودتان ذخیره کنید. بدون آن، گم شدن گوشی = از دست رفتن دفتر.",
+                    "بازیابی، داده‌های فعلی را با محتوای فایل جایگزین می‌کند (قبلش یک پشتیبان تازه بگیرید). " +
+                        "فایل را در Google Drive/تلگرام خودتان هم نگه دارید: بدون آن، گم شدن گوشی = از دست رفتن دفتر.",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )

@@ -8,6 +8,9 @@ import androidx.room.Query
 /**
  * خواندن/نوشتن کل جداول برای پشتیبان‌گیری JSON.
  * فقط برای اپ تک‌کاربرهٔ محلی؛ در بازیابی، جداول قبلی پاک می‌شوند.
+ *
+ * ⚠ اگر جدول تازه‌ای اضافه شد، همین‌جا both all.../put.../clear... را اضافه کنید؛
+ * وگرنه آن داده در پشتیبان نمی‌آید (همین اشکال قبلاً برای تنظیمات پنل وجود داشت).
  */
 @Dao
 interface BackupDao {
@@ -23,6 +26,7 @@ interface BackupDao {
     @Query("SELECT * FROM panel_configs") suspend fun allPanelConfigs(): List<PanelConfig>
     @Query("SELECT * FROM panel_accounts") suspend fun allPanelAccounts(): List<PanelAccount>
     @Query("SELECT * FROM bank_sms") suspend fun allBankSms(): List<BankSms>
+    @Query("SELECT * FROM sms_outbox") suspend fun allOutbox(): List<SmsOutbox>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putCustomers(items: List<Customer>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putPlans(items: List<Plan>)
@@ -35,6 +39,7 @@ interface BackupDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putPanelConfigs(items: List<PanelConfig>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putPanelAccounts(items: List<PanelAccount>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putBankSms(items: List<BankSms>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putOutbox(items: List<SmsOutbox>)
 
     @Query("DELETE FROM customers") suspend fun clearCustomers()
     @Query("DELETE FROM plans") suspend fun clearPlans()
@@ -44,9 +49,16 @@ interface BackupDao {
     @Query("DELETE FROM payment_allocations") suspend fun clearAllocations()
     @Query("DELETE FROM ledger_entries") suspend fun clearLedger()
     @Query("DELETE FROM expenses") suspend fun clearExpenses()
+    @Query("DELETE FROM panel_configs") suspend fun clearPanelConfigs()
     @Query("DELETE FROM panel_accounts") suspend fun clearPanelAccounts()
     @Query("DELETE FROM bank_sms") suspend fun clearBankSms()
+    @Query("DELETE FROM sms_outbox") suspend fun clearOutbox()
 
+    /**
+     * جایگزینی کامل داده‌ها. تنظیمات پنل فقط وقتی پاک/بازنویسی می‌شود که فایل
+     * پشتیبان واقعاً تنظیمات پنل داشته باشد (فایل‌های نسخهٔ ۱ آن را ندارند و نباید
+     * اتصال فعلی کاربر را نابود کنند).
+     */
     suspend fun replaceAll(payload: BackupPayload) {
         clearAllocations()
         clearLines()
@@ -58,6 +70,7 @@ interface BackupDao {
         clearExpenses()
         clearPanelAccounts()
         clearBankSms()
+        clearOutbox()
         putCustomers(payload.customers)
         putPlans(payload.plans)
         putInvoices(payload.invoices)
@@ -68,5 +81,10 @@ interface BackupDao {
         putExpenses(payload.expenses)
         putPanelAccounts(payload.panelAccounts)
         putBankSms(payload.bankSms)
+        putOutbox(payload.smsOutbox)
+        payload.panelConfig?.let {
+            clearPanelConfigs()
+            putPanelConfigs(listOf(it))
+        }
     }
 }

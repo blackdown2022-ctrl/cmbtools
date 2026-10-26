@@ -61,7 +61,7 @@ object SmsTemplate {
 
         return settings.invoiceTemplate
             .replace("{business}", settings.businessName)
-            .replace("{invoiceNo}", invoice.number)
+            .replace("{invoiceNo}", Money.toPersian(invoice.number))
             .replace("{customer}", customer.name)
             .replace("{total}", amountText)
             .replace("{items}", items)

@@ -143,7 +143,7 @@ fun InvoicesScreen(vm: AppViewModel, nav: NavHostController) {
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "${inv.number} • ${customerNames[inv.customerId] ?: "-"}",
+                            Money.toPersian(inv.number) + " • " + (customerNames[inv.customerId] ?: "-"),
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(

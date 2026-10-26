@@ -97,9 +97,9 @@ jobs:
             check "https://plugins.gradle.org/m2/com/google/devtools/ksp/com.google.devtools.ksp.gradle.plugin/2.0.20-1.0.25/com.google.devtools.ksp.gradle.plugin-2.0.20-1.0.25.pom"
           } | tee net.txt
 
+      # اگر تستی شکست بخورد، بیلد متوقف می‌شود تا نسخهٔ ناسالم منتشر نشود.
       - name: تست‌های واحد
         id: tests
-        continue-on-error: true
         run: |
           set -o pipefail
           ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log

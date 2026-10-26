@@ -24,6 +24,26 @@ object Money {
         return if (withUnit) "$text ریال" else text
     }
 
+    /**
+     * گروه‌بندی سه‌رقمی «حین تایپ».
+     *
+     * ورودی هرچیزی باشد (فارسی/لاتین/با جداکننده)، فقط ارقامش نگه داشته می‌شود و
+     * خروجی به‌صورت «۱۲٬۳۴۵٬۶۷۸» برمی‌گردد. صفرهای ابتدایی حذف می‌شوند تا
+     * «۰۵۰۰» به «۵۰۰» تبدیل شود (همان چیزی که کاربر انتظار دارد).
+     */
+    fun groupDigits(input: String, persian: Boolean = true): String {
+        val digits = toLatinDigits(input).filter { it.isDigit() }
+        if (digits.isEmpty()) return ""
+        val trimmed = digits.trimStart('0').ifEmpty { "0" }
+        val out = StringBuilder(trimmed.length + trimmed.length / 3)
+        for (i in trimmed.indices) {
+            if (i > 0 && (trimmed.length - i) % 3 == 0) out.append('٬')
+            out.append(trimmed[i])
+        }
+        val text = out.toString()
+        return if (persian) toPersian(text) else text
+    }
+
     /** برای ورودی‌های کوتاه داشبورد */
     fun compact(rial: Long, persian: Boolean = true): String {
         val m = rial / 1_000_000L

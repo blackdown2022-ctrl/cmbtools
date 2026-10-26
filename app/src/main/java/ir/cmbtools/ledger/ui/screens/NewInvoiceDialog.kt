@@ -35,6 +35,7 @@ import ir.cmbtools.ledger.data.Plan
 import ir.cmbtools.ledger.ui.AppViewModel
 import ir.cmbtools.ledger.ui.common.AmountField
 import ir.cmbtools.ledger.ui.common.CustomerPickerDialog
+import ir.cmbtools.ledger.ui.common.DropdownField
 import ir.cmbtools.ledger.ui.common.LabeledField
 import ir.cmbtools.ledger.ui.common.SectionCard
 import ir.cmbtools.ledger.ui.theme.TextMuted
@@ -45,8 +46,9 @@ import ir.cmbtools.ledger.ui.theme.TextMuted
  * نکته‌های مهم که باعث می‌شد دکمهٔ «صدور فاکتور» غیرفعال بماند و اینجا رفع شده‌اند:
  *  ۱) بسته‌ها به‌صورت async می‌آیند؛ اگر فرم قبل از رسیدن آن‌ها ساخته می‌شد، قیمت صفر می‌ماند.
  *     حالا با LaunchedEffect اولین بسته انتخاب و قیمتش پر می‌شود.
- *  ۲) انتخاب بسته با DropdownField (ExposedDropdownMenu) داخل AlertDialog روی بعضی گوشی‌ها
- *     باز نمی‌شد؛ حالا ردیف چیپ‌های افقی است که همیشه کار می‌کند.
+ *  ۲) انتخاب بسته حالا «کشویی» است (خواستهٔ کاربر) با پیاده‌سازی‌ای که داخل دیالوگ هم
+ *     مطمئن باز می‌شود: لایهٔ لمس روی فیلد + DropdownMenu؛ به‌جای ExposedDropdownMenuBox
+ *     که در دیالوگ روی بعضی گوشی‌ها باز نمی‌شد.
  *  ۳) دکمه دیگر «بی‌صدا» غیرفعال نمی‌شود: همیشه قابل لمس است و دلیل ناقص بودن فرم را می‌گوید.
  */
 @Composable
@@ -123,21 +125,16 @@ fun NewInvoiceDialog(
                 }
 
                 if (plans.isNotEmpty()) {
-                    Text("بسته", color = TextMuted, style = MaterialTheme.typography.labelMedium)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        plans.forEach { plan ->
-                            FilterChip(
-                                selected = selectedPlan?.id == plan.id,
-                                onClick = { applyPlan(plan) },
-                                label = { Text(plan.name) }
-                            )
-                        }
-                    }
+                    DropdownField(
+                        label = "بسته (کشویی)",
+                        items = plans,
+                        selected = selectedPlan,
+                        itemLabel = { plan ->
+                            plan.name + " — " + Money.toPersian(plan.gb.toString()) + " گیگ / " +
+                                Money.toPersian(plan.days.toString()) + " روز / " + Money.format(plan.priceRial, withUnit = false)
+                        },
+                        onSelect = { applyPlan(it) }
+                    )
                     selectedPlan?.let { plan ->
                         Text(
                             Money.toPersian(plan.gb.toString()) + " گیگ • " +

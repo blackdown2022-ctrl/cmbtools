@@ -2,11 +2,16 @@ package ir.cmbtools.ledger.panel
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonElement
 
 /**
- * DTOها دقیقاً مطابق اسکیمای API v2 نسخه ۱۴ هیدی‌فای‌پنل.
- * منبع: hiddifypanel/panel/commercial/restapi/v2/admin/schema.py و users_page_api.py
+ * DTOهای API v2 هیدی‌فای — مطابق نسخهٔ ۱۴ (tag v14.0.x) و سازگار با نسخه‌های اطراف.
+ *
+ * دو نکتهٔ مهم که باعث اشکال در نسخه‌های قبل شده بود:
+ *  ۱) `POST /admin/users/` و `PATCH /admin/users/<uuid>/` در نسخهٔ ۱۴ پاسخ را داخل
+ *     یک پوشش `{"user": {...}}` برمی‌گردانند، نه به‌صورت مسطح. پس پاسخ‌ها به‌صورت
+ *     JsonElement خوانده و سپس با [PanelJson.parseUser] باز می‌شوند (هر دو شکل پذیرفته می‌شود).
+ *  ۲) همهٔ فیلدها مقدار پیش‌فرض دارند تا یک فیلد ناشناخته/خالی کل فهرست کاربران را
+ *     از کار نیندازد (خرابی کامل JSON = «همگام‌سازی انجام نشد»).
  */
 
 @Serializable
@@ -33,6 +38,7 @@ data class AdminRefDto(
     @SerialName("parent_uuid") val parentUuid: String? = null
 )
 
+/** متادیتای فهرست کاربران. در نسخهٔ ۱۴ این فیلدها کنار `users` و در سطح بالا می‌آیند. */
 @Serializable
 data class UsersMetaDto(
     @SerialName("me_uuid") val meUuid: String = "",
@@ -43,13 +49,12 @@ data class UsersMetaDto(
 )
 
 /**
- * ردیف صفحهٔ کاربران پنل (`GET /api/v2/admin/users/`).
- * این اندپوینت برخلاف `/admin/user/`، expire_date و remaining_days و مالک کاربر را می‌دهد.
+ * ردیف کاربر پنل (`GET /admin/users/` در نسخهٔ ۱۴ یا `GET /admin/user/` در نسخه‌های قدیمی).
  */
 @Serializable
 data class PanelUserDto(
     @SerialName("id") val id: Long = 0,
-    @SerialName("uuid") val uuid: String,
+    @SerialName("uuid") val uuid: String = "",
     @SerialName("name") val name: String = "",
     @SerialName("comment") val comment: String = "",
     @SerialName("enable") val enable: Boolean = true,
@@ -67,7 +72,9 @@ data class PanelUserDto(
     @SerialName("owner_name") val ownerName: String = "",
     @SerialName("telegram_id") val telegramId: Long? = null,
     @SerialName("tags") val tags: List<Int> = emptyList()
-)
+) {
+    val usable: Boolean get() = uuid.isNotBlank()
+}
 
 @Serializable
 data class UsersPageDto(
@@ -75,22 +82,28 @@ data class UsersPageDto(
     @SerialName("meta") val meta: UsersMetaDto = UsersMetaDto()
 )
 
-/** بدنهٔ ساخت کاربر (`POST /api/v2/admin/users/`) */
+/**
+ * بدنهٔ ساخت کاربر. با `explicitNulls = false` در Json کلاینت سریال می‌شود،
+ * پس فیلدهای null اصلاً فرستاده نمی‌شوند (پنل آن‌ها را به‌عنوان «مقدار خالی» تفسیر نکند).
+ */
 @Serializable
 data class CreateUserRequest(
     @SerialName("name") val name: String,
     @SerialName("usage_limit_GB") val usageLimitGb: Double,
     @SerialName("package_days") val packageDays: Int,
     @SerialName("comment") val comment: String? = null,
-    @SerialName("enable") val enable: Boolean = true,
-    @SerialName("mode") val mode: String = "no_reset",
+    @SerialName("enable") val enable: Boolean? = null,
+    @SerialName("mode") val mode: String? = null,
     @SerialName("uuid") val uuid: String? = null
 )
 
 /**
- * بدنهٔ ویرایش (`PATCH /api/v2/admin/users/{uuid}/`).
- * فیلدهای null به‌صورت صریح فرستاده می‌شوند (exclude_unset در پنل)، پس `start_date = null`
- * یعنی «شروع دوره از اتصال بعدی» که همان معنای تمدید در پنل است.
+ * بدنهٔ ویرایش (`PATCH`).
+ *
+ * ⚠ نکتهٔ نسخهٔ ۱۴: پنل هیچ‌کدام از `current_usage_GB` و `start_date` را در PATCH قبول
+ * نمی‌کند؛ برای تمدید باید پرچم‌های `reset_usage` و `reset_days` فرستاده شوند.
+ * برای سازگاری با نسخه‌های قدیمی هر چهار مورد فرستاده می‌شوند (پنل موارد ناشناخته را
+ * نادیده می‌گیرد) و فیلدهای null به‌طور کامل حذف می‌شوند تا پنل نام کاربر را خالی نکند.
  */
 @Serializable
 data class PatchUserRequest(
@@ -100,7 +113,8 @@ data class PatchUserRequest(
     @SerialName("current_usage_GB") val currentUsageGb: Double? = null,
     @SerialName("enable") val enable: Boolean? = null,
     @SerialName("comment") val comment: String? = null,
-    @SerialName("start_date") val startDate: JsonElement? = null
+    @SerialName("reset_usage") val resetUsage: Boolean? = null,
+    @SerialName("reset_days") val resetDays: Boolean? = null
 )
 
 @Serializable

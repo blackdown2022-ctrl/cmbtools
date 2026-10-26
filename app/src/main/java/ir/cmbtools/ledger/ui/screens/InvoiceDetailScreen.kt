@@ -56,8 +56,11 @@ import ir.cmbtools.ledger.ui.theme.TextMuted
 
 @Composable
 fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostController) {
-    val invoice by vm.invoiceFlow(invoiceId).collectAsStateWithLifecycle(initialValue = null)
-    val lines by vm.invoiceLines(invoiceId).collectAsStateWithLifecycle(initialValue = emptyList())
+    // مانند صفحهٔ مشتری: Flowها یک‌بار ساخته می‌شوند تا در هر بازترکیب دوباره جمع‌آوری نشوند.
+    val invoiceFlow = remember(invoiceId) { vm.invoiceFlow(invoiceId) }
+    val linesFlow = remember(invoiceId) { vm.invoiceLines(invoiceId) }
+    val invoice by invoiceFlow.collectAsStateWithLifecycle(initialValue = null)
+    val lines by linesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val customers by vm.customers.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -69,7 +72,7 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
 
     Column(Modifier.fillMaxSize()) {
         GradientHeader(
-            title = invoice?.number ?: "فاکتور",
+            title = invoice?.number?.let { Money.toPersian(it) } ?: "فاکتور",
             subtitle = customer?.name,
             action = {
                 IconButton(onClick = { nav.popBackStack() }) {
@@ -109,7 +112,8 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
                         inv.packageName.ifBlank { lines.firstOrNull()?.description ?: "—" }
                     )
                     if (inv.cardNumber.isNotBlank()) {
-                        InfoRow("شمارهٔ کارت", Money.toPersian(inv.cardNumber))
+                        // شمارهٔ کارت تنها عددی است که لاتین می‌ماند (خواندن/کپی آسان‌تر)
+                        InfoRow("شمارهٔ کارت", inv.cardNumber)
                     }
 
                     // ماندهٔ قبلی فقط وقتی مشتری از قبل بدهکار بوده نمایش داده می‌شود

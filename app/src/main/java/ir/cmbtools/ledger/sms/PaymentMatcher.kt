@@ -39,21 +39,6 @@ class PaymentMatcher(
         data object Duplicate : Result()
     }
 
-    /** Reparse only unpaid/unmatched historical SMS after parser improvements; settled payments remain untouched. */
-    suspend fun refreshUnmatchedSmsParsing() {
-        bankSmsDao.unmatchedForReparse().forEach { sms ->
-            val parsed = BankSmsParser.parse(sms.sender, sms.body, sms.receivedAtMillis)
-            bankSmsDao.refreshParsedFields(
-                id = sms.id,
-                amountRial = parsed.amountRial,
-                last4 = parsed.last4,
-                balanceRial = parsed.balanceRial,
-                bank = parsed.bank,
-                isCredit = parsed.isCredit
-            )
-        }
-    }
-
     suspend fun handle(sender: String, body: String, receivedAtMillis: Long): Result {
         val hash = sha256("$sender|$body|${receivedAtMillis / 60_000}")
         if (bankSmsDao.byHash(hash) != null) return Result.Duplicate
@@ -76,12 +61,6 @@ class PaymentMatcher(
         if (!parsed.isCredit || parsed.isOtp || parsed.isReversal || parsed.amountRial <= 0) {
             val id = bankSmsDao.insert(base.copy(matchStatus = MatchStatus.IGNORED, note = parsed.reason))
             return Result.Ignored(parsed.reason.ifBlank { "پیامک واریز نیست" })
-        }
-
-        if (parsed.amountUnit != "RIAL" && parsed.amountUnit != "TOMAN") {
-            val reason = "واحد ریال/تومان در پیامک مشخص نیست؛ تطبیق خودکار امن نیست"
-            bankSmsDao.insert(base.copy(note = reason))
-            return Result.NeedsReview(reason, parsed.amountRial)
         }
 
         if (!settings.autoMatchBankSms) {

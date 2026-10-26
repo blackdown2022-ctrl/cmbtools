@@ -211,6 +211,7 @@ class SyncEngine(
                             if (result != null && result.ok) {
                                 issued++
                                 if (result.smsSent) sms++
+                                else if (settings.autoSmsOnInvoice) problems += "${u.name}: ${result.message}"
                                 if (shouldInvoiceRenew) lastInvoicedExpire = newExpire
                             } else if (result != null) {
                                 skipped++
@@ -219,6 +220,18 @@ class SyncEngine(
                         }
                     }
                 }
+            }
+
+            // اگر تلاش فوری پیامک فاکتور شکست خورده باشد، در همگام‌سازی بعدی دوباره امتحان می‌شود؛
+            // صف خروجی فاصلهٔ ۳۰ دقیقه‌ای دارد و پیامک‌های موفق را تکرار نمی‌کند.
+            val smsRetries = runCatching { billing.retryPendingInvoiceSms(u.uuid) }
+                .getOrElse { e ->
+                    problems += "${u.name}: تلاش دوبارهٔ پیامک ناموفق بود: ${e.message ?: "خطای نامشخص"}"
+                    emptyList()
+                }
+            smsRetries.forEach { retry ->
+                if (retry.smsSent) sms++
+                else if (retry.message.isNotBlank()) problems += "${u.name}: ${retry.message}"
             }
 
             if (customerId > 0) linked++

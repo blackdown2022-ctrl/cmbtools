@@ -31,7 +31,7 @@ data class AppSettings(
     // ── همگام‌سازی و صدور خودکار فاکتور ──────────────────────────────────────
     /** هر چند دقیقه با پنل همگام‌سازی شود (سرویس پس‌زمینه) */
     val autoSyncEnabled: Boolean = true,
-    val autoSyncMinutes: Int = 5,
+    val autoSyncMinutes: Int = 1,
     /** برای اکانت تازه‌ای که در پنل ساخته می‌شود فاکتور خودکار صادر شود */
     val autoInvoiceOnNewAccount: Boolean = true,
     /** برای اکانتی که تمدید می‌شود فاکتور خودکار صادر شود */
@@ -160,7 +160,9 @@ class Prefs(context: Context) {
             autoMatchBankSms = sp.getBoolean("autoMatchBankSms", true),
             autoMatchMaxRial = sp.getLong("autoMatchMaxRial", defaults.autoMatchMaxRial),
             autoSyncEnabled = sp.getBoolean("autoSyncEnabled", true),
-            autoSyncMinutes = sp.getInt("autoSyncMinutes", 5),
+            // پیش‌تر فاصله فقط پیش‌فرض ۵ دقیقه‌ای بود و در UI قابل تغییر نبود؛
+            // با نسخهٔ جدید آن مقدارِ پیش‌فرض به بررسی یک‌دقیقه‌ای ارتقا می‌یابد.
+            autoSyncMinutes = sp.getInt("autoSyncMinutes", defaults.autoSyncMinutes).let { if (it == 5) 1 else it.coerceIn(1, 120) },
             autoInvoiceOnNewAccount = sp.getBoolean("autoInvoiceOnNewAccount", true),
             autoInvoiceOnRenew = sp.getBoolean("autoInvoiceOnRenew", true),
             autoSmsOnInvoice = sp.getBoolean("autoSmsOnInvoice", true),

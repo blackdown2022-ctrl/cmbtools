@@ -16,9 +16,15 @@ class PanelSyncWorker(context: Context, params: WorkerParameters) : CoroutineWor
     override suspend fun doWork(): Result {
         val app = applicationContext as? LedgerApp ?: return Result.failure()
         val settings = app.container.prefs.current
-        if (!settings.autoSyncEnabled || !app.container.panelService.isConfigured()) return Result.success()
+        if (!settings.autoSyncEnabled) return Result.success()
         return try {
-            app.container.syncEngine.sync()
+            if (!app.container.panelService.isConfigured()) return Result.success()
+            val report = app.container.syncEngine.sync()
+            if (report.invoicesIssued > 0 || report.smsSent > 0 || report.problems.isNotEmpty()) {
+                val details = report.problems.take(3).joinToString("\n")
+                val summary = listOf(report.message, details).filter { it.isNotBlank() }.joinToString("\n")
+                app.notifications.show("همگام‌سازی خودکار", summary)
+            }
             Result.success()
         } catch (e: Exception) {
             app.notifications.show(

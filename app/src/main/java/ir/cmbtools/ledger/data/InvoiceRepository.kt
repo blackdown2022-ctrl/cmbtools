@@ -38,6 +38,9 @@ class InvoiceRepository(
 
     suspend fun lines(invoiceId: Long): List<InvoiceLine> = invoices.lines(invoiceId)
 
+    suspend fun autoIssuedForPanelUser(panelUserUuid: String): List<Invoice> =
+        invoices.autoIssuedForPanelUser(panelUserUuid)
+
     /** Hard-delete while returning allocations to the customers' unapplied payment credit. */
     suspend fun delete(invoiceId: Long) {
         val invoice = invoices.byId(invoiceId) ?: return

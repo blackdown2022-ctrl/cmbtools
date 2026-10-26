@@ -226,7 +226,6 @@ class AutoBilling(
             ?: return BillingResult(false, message = "فاکتور پیدا نشد")
         val customer: Customer = customers.byId(invoice.customerId)
             ?: return BillingResult(false, message = "مشتری پیدا نشد")
-        if (customer.phone.isBlank()) return BillingResult(false, message = "شمارهٔ مشتری ثبت نشده")
 
         val lines = invoices.lines(invoiceId)
         val body = SmsTemplate.render(settings, invoice, customer, lines, invoice.subscriptionUrl)
@@ -245,6 +244,21 @@ class AutoBilling(
             smsSent = result.ok,
             message = if (result.ok) "پیامک ارسال شد" else "پیامک ارسال نشد: ${result.message}"
         )
+    }
+
+    /**
+     * Retry failed/pending SMS for automatic invoices linked to this panel user.
+     * The outbox's latest attempt enforces a cooldown and SENT entries are never resent.
+     */
+    suspend fun retryPendingInvoiceSms(panelUuid: String): List<BillingResult> {
+        if (!settings.autoSmsOnInvoice || panelUuid.isBlank()) return emptyList()
+        val results = mutableListOf<BillingResult>()
+        for (invoice in invoices.autoIssuedForPanelUser(panelUuid)) {
+            if (smsSender.invoiceSmsRetryDue(invoice.id)) {
+                results += sendInvoiceSms(invoice.id)
+            }
+        }
+        return results
     }
 
     /** متن پیامک برای پیش‌نمایش در UI */

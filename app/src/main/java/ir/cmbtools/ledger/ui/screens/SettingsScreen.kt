@@ -26,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -64,6 +65,7 @@ import ir.cmbtools.ledger.ui.theme.AccentGreen
 import ir.cmbtools.ledger.ui.theme.PrimaryCyan
 import ir.cmbtools.ledger.ui.theme.TextMuted
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
@@ -395,7 +397,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("همگام‌سازی خودکار با پنل")
                         Text(
-                            "هر ${Money.toPersian(settings.autoSyncMinutes.toString())} دقیقه در سرویس فعال؛ پشتیبان اندروید هر ۱۵ دقیقه هم تلاش می‌کند",
+                            "کاربران جدید در چرخهٔ بعدی شناسایی می‌شوند؛ پشتیبان اندروید هر ۱۵ دقیقه هم تلاش می‌کند",
                             color = TextMuted,
                             style = MaterialTheme.typography.labelMedium
                         )
@@ -411,6 +413,23 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                         }
                     )
                 }
+                Text(
+                    "فاصلهٔ بررسی: ${Money.toPersian(settings.autoSyncMinutes.coerceIn(1, 15).toString())} دقیقه (۱ دقیقه سریع‌تر است؛ بدون وب‌هوکِ پنل، تشخیص کاملاً لحظه‌ای ممکن نیست)",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Slider(
+                    value = settings.autoSyncMinutes.coerceIn(1, 15).toFloat(),
+                    onValueChange = { value ->
+                        val minutes = value.roundToInt().coerceIn(1, 15)
+                        if (minutes != settings.autoSyncMinutes) {
+                            vm.updateSettings { it.copy(autoSyncMinutes = minutes) }
+                        }
+                    },
+                    valueRange = 1f..15f,
+                    steps = 13,
+                    enabled = settings.autoSyncEnabled
+                )
                 if (settings.autoSyncEnabled && Build.VERSION.SDK_INT >= 33 &&
                     ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
                 ) {

@@ -424,7 +424,7 @@ class PanelUrlTest {
  */
 class PanelCompatTest {
 
-    private fun target(url: String) = ir.cmbtools.ledger.panel.PanelTarget.of(
+    private fun target() = ir.cmbtools.ledger.panel.PanelTarget.of(
         ir.cmbtools.ledger.data.PanelConfig(host = "panel.example.com", adminProxyPath = "AbC123", apiKey = "k")
     )
 
@@ -447,7 +447,7 @@ class PanelCompatTest {
 
     @Test
     fun admin_api_urls_are_built_per_version() {
-        val t = target("")
+        val t = target()
         assertEquals("https://panel.example.com/AbC123/api/v2/admin/me/", t.url(ir.cmbtools.ledger.panel.PanelRoutes.ME))
         assertEquals("https://panel.example.com/AbC123/api/v2/admin/users/", t.url(ir.cmbtools.ledger.panel.PanelRoutes.USERS_PAGE))
         assertEquals("https://panel.example.com/AbC123/api/v2/admin/user/", t.url(ir.cmbtools.ledger.panel.PanelRoutes.USERS_LEGACY))
@@ -520,6 +520,70 @@ class PanelCompatTest {
         assertEquals(LocalDate.parse("2026-02-15").toEpochDay(), v14Row.expireEpochDay)
         assertEquals(5, v14Row.remainingDaysOrComputed)
         assertEquals("active", v14Row.statusOrComputed)
+    }
+
+    @Test
+    fun legacy_panel_answers_unknown_route_with_500_and_404_text() {
+        // این دقیقاً همان پاسخی است که پنل v11.0.13 برای /api/v2/admin/users/ داد:
+        //   HTTP 500  →  {"msg":"404 Not Found: The requested URL was not found on the server..."}
+        // errorhandler(Exception) در hiddifypanel/panel/common.py این را ۵۰۰ می‌کند؛
+        // پس «مسیر نیست» را نباید با کد ۴۰۴ تنها تشخیص داد.
+        val legacyMissing = ir.cmbtools.ledger.panel.HttpResult(
+            url = "https://srv1.example.com/wD8/api/v2/admin/users/",
+            code = 500,
+            body = """{"msg":"404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again."}""",
+            contentType = "application/json"
+        )
+        assertTrue(legacyMissing.isMissingRoute)
+        assertFalse(legacyMissing.isEmptyUserList)
+        assertFalse(legacyMissing.ok)
+
+        // ۴۰۴ خالص و ۴۰۵ هم یعنی «این مسیر در این نسخه نیست»
+        assertTrue(legacyMissing.copy(code = 404, body = """{"message":"Not Found"}""").isMissingRoute)
+        assertTrue(legacyMissing.copy(code = 405, body = "").isMissingRoute)
+
+        // «شما کاربری ندارید» خطا نیست: فهرست خالی است
+        val emptyList = ir.cmbtools.ledger.panel.HttpResult(
+            url = "https://srv1.example.com/wD8/api/v2/admin/user/",
+            code = 404,
+            body = """{"message":"You have no user"}""",
+            contentType = "application/json"
+        )
+        assertTrue(emptyList.isEmptyUserList)
+        assertFalse(emptyList.isMissingRoute)
+
+        // ۵۰۰ معمولی (یعنی واقعاً خطای سرور) نباید «مسیر نیست» شمرده شود
+        val realError = legacyMissing.copy(code = 500, body = """{"msg":"database is locked"}""")
+        assertFalse(realError.isMissingRoute)
+
+        // ۴۰۰ invalid request = مسیر پروکسی ادمین نیست (خطای تنظیمات، نه نسخه)
+        val wrongPath = legacyMissing.copy(code = 400, body = """{"msg":"invalid request"}""")
+        assertTrue(wrongPath.isInvalidProxyPath)
+        assertFalse(wrongPath.isMissingRoute)
+    }
+
+    @Test
+    fun not_started_package_follows_panel_semantics() {
+        // نسخه‌های ۱۱–۱۳ تا اولین اتصال کاربر start_date را null می‌گذارند و
+        // طبق User.remaining_days در models/user.py: «روزهای باقی‌مانده = package_days»
+        val fresh = ir.cmbtools.ledger.panel.PanelUserDto(
+            uuid = "u3",
+            name = "new user",
+            packageDays = 30,
+            startDate = null,
+            usageLimitGb = 30.0,
+            currentUsageGb = 0.0
+        )
+        assertTrue(fresh.notStarted)
+        assertEquals(30, fresh.remainingDaysOrComputed)
+        assertEquals(LocalDate.now().toEpochDay() + 30, fresh.expireEpochDay)
+        assertEquals("active", fresh.statusOrComputed)
+
+        // بعد از اولین اتصال، پنل start_date می‌دهد و حساب دقیق می‌شود
+        val started = fresh.copy(startDate = LocalDate.now().minusDays(7).toString())
+        assertFalse(started.notStarted)
+        assertEquals(23, started.remainingDaysOrComputed)
+        assertEquals(LocalDate.now().minusDays(7).toEpochDay() + 30, started.expireEpochDay)
     }
 
     @Test

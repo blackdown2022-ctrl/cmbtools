@@ -34,8 +34,18 @@ data class PanelConnection(
     val message: String = ""
 )
 
-/** یک ردیف نتیجهٔ عیب‌یابی اتصال، برای نمایش در تنظیمات. */
-data class PanelCheck(val title: String, val ok: Boolean, val detail: String)
+/**
+ * یک ردیف نتیجهٔ بررسی اتصال، برای نمایش در تنظیمات.
+ *  • `ok = true`      → سبز
+ *  • `note = true`    → خنثی: «در این نسخه وجود ندارد» یا توضیح، خطا نیست
+ *  • `ok=false` و `note=false` → قرمز: خطای واقعی
+ */
+data class PanelCheck(
+    val title: String,
+    val ok: Boolean,
+    val detail: String,
+    val note: Boolean = false
+)
 
 /**
  * تجزیهٔ آدرس پنل.
@@ -305,14 +315,14 @@ class PanelClient(
                 "پنل به‌جای JSON، صفحهٔ ورود/HTML برگرداند. یعنی کلید API یا مسیر ادمین درست نیست.",
                 PanelException.Kind.AUTH
             )
-            r.code == 404 -> PanelException(
-                "آدرس «$action» در پنل پیدا نشد (۴۰۴).\n" +
-                    "یعنی یا نسخهٔ پنل این سرویس را ندارد، یا در آدرس، مسیر اضافه وجود دارد.\n" +
+            r.isMissingRoute -> PanelException(
+                "آدرس «$action» در نسخهٔ پنل شما وجود ندارد (${r.code}).\n" +
+                    "یا نسخهٔ پنل این سرویس را ندارد، یا در آدرس، مسیر اضافه وجود دارد.\n" +
                     "آدرس استفاده‌شده: ${r.url}",
                 PanelException.Kind.NOT_FOUND
             )
-            r.code == 405 -> PanelException(
-                "نسخهٔ پنل شما این عملیات را در این مسیر پشتیبانی نمی‌کند (۴۰۵) — آدرس: ${r.url}",
+            r.code == 422 -> PanelException(
+                "پنل این فیلدها را نپذیرفت ($action): " + r.panelMessage.ifBlank { r.short() },
                 PanelException.Kind.SERVER
             )
             r.code == 400 -> PanelException(
@@ -498,6 +508,8 @@ class PanelClient(
                 flavor = f
                 workingEndpoint = url
                 lastProbes = probes
+                // برقراری اتصال = پیام خام قبلی دیگر معنی ندارد
+                lastRawError = ""
                 val resolved = Resolved(
                     config = config,
                     target = target,
@@ -517,10 +529,14 @@ class PanelClient(
                     r.isInvalidProxyPath -> "کد ۴۰۰ invalid request — مسیر ادمین نیست"
                     r.isUnauthorized -> "کد ${r.code} — کلید API رد شد"
                     r.isHtml -> "صفحهٔ HTML — به صفحهٔ ورود ریدایرکت شدیم"
-                    else -> "کد ${r.code} — در این نسخه وجود ندارد"
-                } + "\n" + url
+                    // نسخه‌های ۱۱–۱۳ مسیر ناشناخته را با کد ۵۰۰ برمی‌گردانند؛ خطا نیست
+                    r.isMissingRoute -> "این مسیر در نسخهٔ پنل شما نیست — طبیعی است؛ مسیر بعدی امتحان می‌شود"
+                    else -> "کد ${r.code} — " + r.panelMessage.ifBlank { "بدون توضیح" }
+                } + "\n" + url,
+                note = r.isMissingRoute
             )
-            if (lastError == null) lastError = failure(r, "فهرست کاربران")
+            // «این مسیر نیست» خطای واقعی نیست؛ پیام خامِ آن نباید در گزارش بماند
+            if (lastError == null && !r.isMissingRoute) lastError = failure(r, "فهرست کاربران")
         }
 
         lastProbes = probes
@@ -665,7 +681,9 @@ class PanelClient(
             ApiFlavor.LEGACY -> res.target.url(PanelRoutes.USERS_LEGACY)
             ApiFlavor.V1 -> res.target.url(PanelRoutes.V1_USERS)
         }
-        val json = PanelJson.lenient.encodeToString(JsonObject.serializer(), body)
+        // `JsonObject.toString()` با تنظیمات پیش‌فرض نوشته می‌شود (explicitNulls = true)،
+        // پس `null`ها واقعاً در بدنه می‌آیند — برای `start_date: null` حیاتی است.
+        val json = body.toString()
         val r = http.post(url, res.config.apiKey, json)
 
         if (r.ok) {
@@ -695,22 +713,43 @@ class PanelClient(
         throw failure(r, "ساخت کاربر")
     }
 
-    /** آپدیت کاربر؛ بدنه بر اساس سبک ساخته می‌شود (و `start_date = null` صریح فرستاده می‌شود). */
+    /**
+     * آپدیت کاربر؛ بدنه بر اساس سبک ساخته می‌شود.
+     *
+     * دو نکتهٔ مهم که هر دو باگ واقعی بودند:
+     *  • `start_date = null` باید **صریح** در بدنه باشد؛ وگرنه پنل تاریخ قبلی را نگه
+     *    می‌دارد و «تمدید» عملاً انجام نمی‌شود (بدنه با `JsonObject.toString()` ساخته
+     *    می‌شود که `null` را می‌نویسد؛ `PanelJson.lenient` با `explicitNulls = false`
+     *    آن را حذف می‌کرد).
+     *  • اسکیمای نسخه‌های ۱۱–۱۳ (marshmallow، `PatchUserSchema`) فیلدهای
+     *    `reset_usage` / `reset_days` را نمی‌شناسد و با ۴۲۲ «Unknown field» رد می‌کند.
+     *    پس اول بدون این دو فیلد می‌فرستیم و اگر پنل باز هم ۴۲۲ داد، یک بار
+     *    بدون آن‌ها دوباره تلاش می‌کنیم.
+     */
     private suspend fun updateUser(
         res: Resolved,
         uuid: String,
         fields: Map<String, JsonElement>
     ): PanelUserDto? {
+        var r = sendUpdate(res, uuid, fields)
+        if (!r.ok && (r.code == 422 || r.body.contains("Unknown field", ignoreCase = true))) {
+            val stripped = fields.filterKeys { it != "reset_usage" && it != "reset_days" }
+            if (stripped.size != fields.size) r = sendUpdate(res, uuid, stripped)
+        }
+        if (!r.ok) throw failure(r, "ویرایش کاربر")
+        return parseUserBody(r.body) ?: userOf(res, uuid)
+    }
+
+    private fun sendUpdate(res: Resolved, uuid: String, fields: Map<String, JsonElement>): HttpResult {
         val body = buildJsonObject { fields.forEach { (k, v) -> put(k, v) } }
-        val json = PanelJson.lenient.encodeToString(JsonObject.serializer(), body)
-        val r = when (res.flavor) {
+        // `JsonObject.toString()` = JSON فشرده با `null`های صریح (برخلاف PanelJson.lenient)
+        val json = body.toString()
+        return when (res.flavor) {
             ApiFlavor.PAGE -> http.patch(res.target.url(PanelRoutes.userPage(uuid)), res.config.apiKey, json)
             ApiFlavor.LEGACY -> http.patch(res.target.url(PanelRoutes.userLegacy(uuid)), res.config.apiKey, json)
             // v1 متد PATCH ندارد؛ همان POST «add_or_update» با uuid کار را انجام می‌دهد
             ApiFlavor.V1 -> http.post(res.target.url(PanelRoutes.V1_USERS), res.config.apiKey, json)
         }
-        if (!r.ok) throw failure(r, "ویرایش کاربر")
-        return parseUserBody(r.body) ?: userOf(res, uuid)
     }
 
     /**
@@ -725,10 +764,15 @@ class PanelClient(
         val fields = mutableMapOf<String, JsonElement>(
             "enable" to bool(true),
             "current_usage_GB" to num(0.0),
-            "start_date" to JsonNull,
-            "reset_usage" to bool(true),
-            "reset_days" to bool(true)
+            // صریح `null`: «دوره از اولین اتصال بعدی» — در همهٔ نسخه‌ها پشتیبانی می‌شود
+            "start_date" to JsonNull
         )
+        // پرچم‌های ریست فقط در صفحهٔ کاربران نسخهٔ ۱۴ وجود دارند؛ در ۱۱–۱۳ «Unknown field»
+        // می‌دهند. (مسیر `updateUser` هم برای اطمینان دوباره امتحان می‌کند.)
+        if (res.flavor == ApiFlavor.PAGE) {
+            fields["reset_usage"] = bool(true)
+            fields["reset_days"] = bool(true)
+        }
         if (gb > 0) fields["usage_limit_GB"] = num(gb)
         if (days > 0) fields["package_days"] = int(days)
         if (!name.isNullOrBlank()) fields["name"] = str(name)
@@ -869,12 +913,34 @@ class PanelClient(
 
         checks += lastProbes
         checks += PanelCheck("سبک API که جواب داد", true, res.flavor.label)
+        val mode = adminMe?.mode.orEmpty()
+        val modeFa = when (mode) {
+            "super_admin" -> "ادمین کل"
+            "admin" -> "ادمین"
+            "agent" -> "نماینده"
+            else -> ""
+        }
         checks += PanelCheck(
             "کاربر متصل",
             adminMe?.uuid?.isNotBlank() == true,
-            (adminMe?.name?.ifBlank { "—" } ?: "—") + " • " + (adminMe?.uuid ?: "شناسه خوانده نشد")
+            (adminMe?.name?.ifBlank { "—" } ?: "—") + " • " + (adminMe?.uuid ?: "شناسه خوانده نشد") +
+                if (modeFa.isNotBlank()) " • $modeFa" else ""
         )
-        checks += PanelCheck("تعداد کاربران", true, res.users.size.toString())
+        if (mode.isNotBlank() && mode != "super_admin") {
+            checks += PanelCheck(
+                "سطح دسترسی کلید",
+                true,
+                "این کلید «$modeFa» است، نه ادمین کل. فقط کاربرانِ خودِ این ادمین دیده می‌شوند؛ " +
+                    "اگر در پنل کاربر بیشتری دارید، کلید API ادمین کل را وارد کنید.",
+                note = true
+            )
+        }
+        checks += PanelCheck(
+            "تعداد کاربران",
+            true,
+            res.users.size.toString() +
+                if (res.users.isEmpty()) "\n(خودِ پنل گفت «کاربری ندارید» — این خطا نیست)" else ""
+        )
         checks += PanelCheck(
             "اجازهٔ ساخت کاربر",
             res.meta.canAdd && !res.meta.readOnly,
@@ -885,8 +951,26 @@ class PanelClient(
                 else -> "آزاد"
             }
         )
-        val ep = endpoints(c.copy(apiFlavor = res.flavor.id, subscriptionBase =
-        if (c.subscriptionBase.isNotBlank()) c.subscriptionBase else discoverSubscriptionBase(res)))
+        // نتیجهٔ تشخیص ذخیره می‌شود تا گزارش/تنظیمات «نسخهٔ ?» و «خودکار» نشان ندهد
+        val base = if (c.subscriptionBase.isNotBlank()) c.subscriptionBase else discoverSubscriptionBase(res)
+        if (base.isNotBlank() && c.subscriptionBase.isBlank()) {
+            runCatching { prefs.update { it.copy(fallbackSubscriptionBase = base) } }
+        }
+        val saved = c.copy(
+            panelVersion = res.version.ifBlank { c.panelVersion },
+            apiFlavor = res.flavor.id,
+            lastSyncAt = System.currentTimeMillis(),
+            subscriptionBase = base
+        )
+        runCatching { panelDao.saveConfig(saved) }
+        panelVersion = saved.panelVersion
+        val ep = endpoints(saved)
+        checks += PanelCheck(
+            "نسخهٔ پنل",
+            true,
+            saved.panelVersion.ifBlank { "پنل نسخه را اعلام نکرد (مسیر /api/v2/panel/info/ را ببینید)" } +
+                " — سازگار با ۱۱ تا ۱۴"
+        )
         checks += PanelCheck("آدرس ساخت کاربر", true, ep.createUserUrl)
         checks += PanelCheck(
             "پایهٔ لینک اشتراک",
@@ -901,8 +985,17 @@ class PanelClient(
     suspend fun scan(): List<PanelCheck> {
         val res = runCatching { resolve(force = true) }
         val checks = lastProbes.toMutableList()
-        res.onSuccess {
-            checks += PanelCheck("سبک API", true, it.flavor.label + " — " + it.users.size + " کاربر")
+        res.onSuccess { hit ->
+            runCatching {
+                panelDao.saveConfig(
+                    hit.config.copy(
+                        panelVersion = hit.version.ifBlank { hit.config.panelVersion },
+                        apiFlavor = hit.flavor.id,
+                        lastSyncAt = System.currentTimeMillis()
+                    )
+                )
+            }
+            checks += PanelCheck("سبک API", true, hit.flavor.label + " — " + hit.users.size + " کاربر")
         }.onFailure {
             checks += PanelCheck("نتیجه", false, panelExceptionFor(it).message ?: "خطا")
         }
@@ -945,7 +1038,7 @@ class PanelClient(
         val keyMasked = if (c.apiKey.length <= 8) "****" else "****" + c.apiKey.takeLast(8)
         val sb = StringBuilder()
         sb.appendLine("گزارش اتصال تیزنت")
-        sb.appendLine("نسخهٔ اپ: 0.3.2")
+        sb.appendLine("نسخهٔ اپ: " + ir.cmbtools.ledger.BuildConfig.VERSION_NAME)
         sb.appendLine("آدرس پنل: ${ep.panelUrl}")
         sb.appendLine("مسیر پروکسی ادمین: ${PanelTarget.of(c).proxyPath}")
         sb.appendLine("سبک API: ${ep.flavor}")
@@ -955,9 +1048,21 @@ class PanelClient(
         sb.appendLine("کلید API: $keyMasked")
         sb.appendLine("—")
         checks.forEach { chk ->
-            sb.appendLine((if (chk.ok) "✅ " else "❌ ") + chk.title + ": " + chk.detail)
+            val mark = when {
+                chk.ok -> "✅ "
+                chk.note -> "▫️ "   // خطا نیست: «در این نسخه وجود ندارد»
+                else -> "❌ "
+            }
+            sb.appendLine(mark + chk.title + ": " + chk.detail)
         }
-        if (lastRawError.isNotBlank()) {
+        val realErrors = checks.count { !it.ok && !it.note }
+        sb.appendLine("—")
+        sb.appendLine(
+            if (realErrors == 0) "نتیجه: هیچ خطای واقعی‌ای نیست."
+            else "نتیجه: $realErrors مورد نیاز به بررسی دارد."
+        )
+        // پیام خام فقط وقتی می‌آید که واقعاً خطایی مانده باشد؛ گزارش سالم نباید «خطا» نشان دهد
+        if (realErrors > 0 && lastRawError.isNotBlank()) {
             sb.appendLine("— آخرین پاسخ خام پنل —")
             sb.appendLine(lastRawError.take(900))
         }

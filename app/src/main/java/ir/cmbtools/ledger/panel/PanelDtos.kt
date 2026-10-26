@@ -94,6 +94,15 @@ data class PanelUserDto(
         return runCatching { LocalDate.parse(iso.take(10)).toEpochDay() }.getOrDefault(0)
     }
 
+    /**
+     * آیا بسته هنوز «شروع» نشده؟
+     *
+     * نسخه‌های ۱۱–۱۳ تا اولین اتصال کاربر، `start_date` را `null` می‌گذارند و
+     * `remaining_days` را هم برنمی‌گردانند؛ در همین حالت خودِ پنل می‌گوید
+     * «روزهای باقی‌مانده = package_days» (تابع `User.remaining_days` در `models/user.py`).
+     */
+    val notStarted: Boolean get() = isoToEpochDay(startDate) == 0L
+
     /** نسخه‌های ۱۱–۱۳ `expire_date` ندارند؛ از تاریخ شروع + روزهای بسته محاسبه می‌شود. */
     val expireEpochDay: Long
         get() {
@@ -101,6 +110,8 @@ data class PanelUserDto(
             if (direct > 0) return direct
             val start = isoToEpochDay(startDate)
             if (start > 0 && packageDays > 0) return start + packageDays
+            // بستهٔ شروع‌نشده: پیش‌بینی «از امروز» — همان چیزی که پنل هم نشان می‌دهد
+            if (start == 0L && packageDays > 0) return LocalDate.now().toEpochDay() + packageDays
             return 0
         }
 
@@ -108,6 +119,7 @@ data class PanelUserDto(
     val remainingDaysOrComputed: Int
         get() {
             if (remainingDays != 0) return remainingDays
+            if (notStarted && packageDays > 0) return packageDays
             val exp = expireEpochDay
             if (exp <= 0) return 0
             return (exp - LocalDate.now().toEpochDay()).toInt()

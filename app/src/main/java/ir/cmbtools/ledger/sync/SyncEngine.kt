@@ -121,7 +121,9 @@ class SyncEngine(
             var lastInvoicedExpire = old?.lastInvoicedExpireEpochDay ?: 0L
 
             val isNewUser = old == null
-            val renewed = !isNewUser && PanelSyncRules.isRenewal(
+            // بستهٔ شروع‌نشده (start_date خالی در نسخه‌های ۱۱–۱۳) تاریخ قطعی ندارد؛
+            // انقضای «پیش‌بینی‌شده» هر روز یک روز جلو می‌رود، پس تمدید حساب نمی‌شود.
+            val renewed = !isNewUser && !u.notStarted && PanelSyncRules.isRenewal(
                 oldExpireEpochDay = oldExpire,
                 newExpireEpochDay = newExpire,
                 oldUsageGb = old?.usageGb ?: 0.0,

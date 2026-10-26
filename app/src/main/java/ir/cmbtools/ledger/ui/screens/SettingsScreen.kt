@@ -302,13 +302,20 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                             modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                             verticalAlignment = Alignment.Top
                         ) {
-                            Text(if (check.ok) "✅" else "❌", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                when {
+                                    check.ok -> "✅"
+                                    check.note -> "▫️"   // «در این نسخه وجود ندارد» — خطا نیست
+                                    else -> "❌"
+                                },
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                             Spacer(Modifier.width(6.dp))
                             Column {
                                 Text(check.title, style = MaterialTheme.typography.bodyMedium)
                                 Text(
                                     check.detail,
-                                    color = if (check.ok) TextMuted else MaterialTheme.colorScheme.error,
+                                    color = if (check.ok || check.note) TextMuted else MaterialTheme.colorScheme.error,
                                     style = MaterialTheme.typography.labelMedium
                                 )
                             }

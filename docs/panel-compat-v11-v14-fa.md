@@ -134,3 +134,64 @@ def get_proxy_path_from_url(url: str) -> str | None:
 - محاسبهٔ تاریخ انقضا و وضعیت برای نسخه‌های ۱۱–۱۳ که این فیلدها را ندارند.
 - User-Agent معمولی مرورگر تا WAF/Cloudflare درخواست را ۴۰۳/۴۰۴ نکند.
 - «تست ساخت کاربر» (ساخت و حذف یک کاربر موقت) و گزارش قابل‌کپی با همهٔ آدرس‌ها.
+
+---
+
+## ۹) یافته‌های ۰.۳.۳ — گزارش پنل واقعی (`11.0.13`)
+
+گزارش واقعی از پنل `srv1.tiznet.site` (هیدی‌فای **۱۱.۰.۱۳**) این چیزها را روشن کرد:
+
+### الف) «۴۰۴» در گزارش به‌شکل **۵۰۰** ظاهر می‌شود
+در نسخه‌های ۱۱–۱۳ فایل `hiddifypanel/panel/common.py` این را دارد:
+
+```python
+@app.errorhandler(Exception)
+def internal_server_error(e):
+    ...
+    if hutils.flask.is_api_call(request.path):
+        return jsonify({'msg': str(e)}), 500
+```
+
+یعنی هر مسیر ناشناخته‌ای در API، **کد ۵۰۰** با بدنهٔ
+`{"msg":"404 Not Found: The requested URL was not found on the server..."}` برمی‌گرداند.
+بنابراین «این مسیر در این نسخه نیست» را نمی‌شود فقط با «کد == ۴۰۴» تشخیص داد.
+
+از ۰.۳.۳ این حالت با `HttpResult.isMissingRoute` شناخته می‌شود و در گزارش
+با علامت ▫️ (خطا نیست) نشان داده می‌شود، نه ❌.
+
+### ب) مسیر درست در ۱۱.۰.۱۳ فقط `/api/v2/admin/user/` است
+`GET /api/v2/admin/me/` → ۲۰۰، `GET /api/v2/panel/info/` → `version: "11.0.13"`،
+`GET /api/v2/admin/users/` → ۵۰۰/۴۰۴ (وجود ندارد)، `GET /api/v2/admin/user/` → فهرست.
+
+### ج) فهرست خالی یعنی **صفر کاربر**، نه خطا
+`UsersApi.get` در `users_api.py`:
+```python
+users = User.query.filter(User.added_by.in_(g.account.recursive_sub_admins_ids())).all() \
+        or abort(404, "You have no user")
+```
+`recursive_sub_admins_ids()` خودِ ادمین و زیرمجموعه‌هایش را برمی‌گرداند؛ پس ادمین کل
+همهٔ کاربران را می‌بیند. اگر با کلید یک ادمین جزئی وارد شوید، فقط کاربرانِ او را می‌بینید.
+از ۰.۳.۳ «سطح دسترسی کلید» (`super_admin` / `admin` / `agent`) در گزارش نشان داده می‌شود.
+
+### د) باگ تمدید: `start_date: null` هرگز فرستاده نمی‌شد
+`Json { explicitNulls = false }` مقدار `JsonNull` را از بدنهٔ درخواست **حذف** می‌کرد؛
+یعنی تمدید فقط `package_days` را عوض می‌کرد و تاریخ شروع قبلی سر جایش می‌ماند
+⇒ کاربر عملاً تمدید نمی‌شد. حالا بدنه‌ها با `JsonObject.toString()` ساخته می‌شوند (تنظیمات پیش‌فرض
+کتابخانه ⇒ `explicitNulls = true`) و `"start_date": null` واقعاً ارسال می‌شود.
+
+### ه) باگ تمدید: فیلدهای ناشناخته ⇒ ۴۲۲
+اسکیمای PATCH در ۱۱–۱۳ (`PatchUserSchema` در `schema.py`) فیلدهای
+`reset_usage` / `reset_days` را ندارد و marshmallow (که apiflask مستقیم از آن ارث می‌برد،
+بدون `Meta.unknown = INCLUDE`) با **۴۲۲ «Unknown field.»** رد می‌کند.
+از ۰.۳.۳ این دو فیلد فقط برای سبک `PAGE` (نسخهٔ ۱۴) فرستاده می‌شوند و در صورت
+دریافت ۴۲۲ یک بار بدون آن‌ها تلاش دوباره می‌شود.
+
+### و) بستهٔ شروع‌نشده (`start_date = null`)
+طبق `User.remaining_days` در `models/user.py` نسخهٔ ۱۱:
+```python
+elif self.start_date: res = self.package_days - (today - self.start_date).days
+else:             res = self.package_days      # هنوز شروع نشده
+```
+اپ هم از ۰.۳.۳ همین را تقلید می‌کند: `remainingDaysOrComputed = packageDays` و
+انقضای «پیش‌بینی» = امروز + روزهای بسته. برای جلوگیری از فاکتور الکیِ تمدید،
+تا زمانی که بسته شروع نشده (`notStarted`) تمدید تشخیص داده نمی‌شود.

@@ -85,15 +85,10 @@ object BankSmsParser {
 
     private val reversalWords = listOf("برگشت", "کنسل", "لغو", "reverse", "عودت")
     private val explicitAmountRegex = Regex("""([\d][\d,٬]{2,})\s*(ریال|ريال|تومان|تومن)""")
-    // قالب پست‌بانک: رقم کارت + مبلغ و تاریخ/ساعت بدون جداکننده، سپس مانده با واحد ریال.
-    private val postBankCardAmountRegex = Regex(
-        """واریز\s*به\s*کارت\s*[:：]?\s*(\d{4})\s*\+\s*([\d][\d,٬]{2,}?)(?=\d{4}/\d{1,2}/\d{1,2})"""
-    )
-    private val rialBalanceRegex = Regex("""مانده[^\d]{0,12}[\d][\d,٬]{2,}\s*(?:ریال|ريال)""")
     private val labeledAmountRegex = Regex(
         """(?:مبلغ(?:\s*(?:واریز|تراکنش))?|واریز(?:ی)?|دریافت|انتقال(?:\s*وجه)?)[^\d]{0,24}([\d][\d,٬]{2,})"""
     )
-    private val balanceRegex = Regex("""(?:موجودی|مانده|balance)[^\d]{0,12}([\d][\d,٬]{2,})""", RegexOption.IGNORE_CASE)
+    private val balanceRegex = Regex("""موجودی[^\d]{0,12}([\d][\d,٬]{2,})""")
     private val cardRegex = Regex("""(?:کارت|حساب)[^\d]{0,20}(\d{4})""")
     private val refRegex = Regex(
         """(?:کد\s*(?:پیگیری|رهگیری|مرجع|تراکنش)|شماره\s*(?:پیگیری|رهگیری|مرجع|تراکنش|سند)|شناسه\s*(?:پیگیری|تراکنش)|پیگیری|رهگیری|مرجع|رسید|trace|ref)[^\d]{0,15}(\d{4,})""",
@@ -111,8 +106,7 @@ object BankSmsParser {
     fun parse(sender: String, body: String, receivedAtMillis: Long): ParsedBankSms {
         val normalized = normalize(body)
         val lower = normalized.lowercase()
-        val detectedBank = detectBank(sender)
-        val bank = if (detectedBank == "بانک ناشناس" && lower.contains("پست بانک")) "پست بانک" else detectedBank
+        val bank = detectBank(sender)
 
         val isOtp = otpWords.any { lower.contains(it.lowercase()) }
         val isReversal = reversalWords.any { lower.contains(it.lowercase()) }
@@ -159,14 +153,6 @@ object BankSmsParser {
             val unitText = match.groupValues[2]
             val unit = if (unitText.contains("توم")) "TOMAN" else "RIAL"
             candidates += AmountCandidate(raw, unit, match.range.first, match.range.last + 1, contextScore(text, match.range.first))
-        }
-        if (text.contains("پست بانک")) {
-            postBankCardAmountRegex.findAll(text).forEach { match ->
-                val amountGroup = match.groups[2] ?: return@forEach
-                val raw = Money.parseRial(amountGroup.value) ?: return@forEach
-                val unit = if (rialBalanceRegex.containsMatchIn(text)) "RIAL" else "UNKNOWN"
-                candidates += AmountCandidate(raw, unit, amountGroup.range.first, amountGroup.range.last + 1, 250)
-            }
         }
         labeledAmountRegex.findAll(text).forEach { match ->
             val numberGroup = match.groups[1] ?: return@forEach

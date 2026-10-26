@@ -100,7 +100,6 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
     var template by remember { mutableStateOf(settings.invoiceTemplate) }
     var gatewayKey by remember { mutableStateOf(settings.gatewayApiKey) }
     var gatewaySender by remember { mutableStateOf(settings.gatewaySender) }
-    var bankSmsAllowedSender by remember { mutableStateOf(settings.bankSmsAllowedSender) }
     var autoMatchMax by remember { mutableStateOf(settings.autoMatchMaxRial) }
     var cardNumber by remember { mutableStateOf(settings.paymentCardNumber) }
     var pricePerGb by remember { mutableStateOf(settings.pricePerGbRial) }
@@ -117,9 +116,6 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
             panelName = it.name
             vm.refreshPanelEndpoints()
         }
-    }
-    LaunchedEffect(settings.bankSmsAllowedSender) {
-        bankSmsAllowedSender = settings.bankSmsAllowedSender
     }
 
     val scope = rememberCoroutineScope()
@@ -603,34 +599,6 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
             }
 
             SectionCard(title = "پیامک بانکی", visible = tab == SettingsTab.SMS.ordinal) {
-                LabeledField(
-                    label = "سرشمارهٔ مجاز پیامک بانکی",
-                    value = bankSmsAllowedSender,
-                    onValueChange = { bankSmsAllowedSender = it },
-                    placeholder = "دقیقاً همان فرستندهٔ نمایش‌داده‌شده در پیامک"
-                )
-                Text(
-                    "فرستنده را دقیقاً از بالای پیامک پست‌بانک وارد کنید، نه شماره کارت داخل متن. فقط همان فرستنده پردازش می‌شود؛ فیلد خالی یعنی همه رد می‌شوند. پیامک‌های قدیمی پاک نمی‌شوند.",
-                    color = TextMuted,
-                    style = MaterialTheme.typography.labelMedium
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = {
-                        val savedSender = bankSmsAllowedSender.trim()
-                        bankSmsAllowedSender = savedSender
-                        vm.updateSettings { it.copy(bankSmsAllowedSender = savedSender) }
-                        scope.launch {
-                            runCatching { vm.appContainer().matcher.refreshUnmatchedSmsParsing(savedSender) }
-                        }
-                        vm.report(
-                            if (savedSender.isBlank()) "سرشماره خالی شد؛ همهٔ پیامک‌های بانکی رد می‌شوند"
-                            else "فقط پیامک‌های سرشمارهٔ «$savedSender» پردازش می‌شوند"
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("ذخیرهٔ سرشمارهٔ مجاز") }
-                Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

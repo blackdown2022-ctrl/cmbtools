@@ -40,9 +40,8 @@ class PaymentMatcher(
     }
 
     /** Reparse only unpaid/unmatched historical SMS after parser improvements; settled payments remain untouched. */
-    suspend fun refreshUnmatchedSmsParsing(allowedSender: String) {
+    suspend fun refreshUnmatchedSmsParsing() {
         bankSmsDao.unmatchedForReparse().forEach { sms ->
-            if (!BankSmsSenderFilter.allows(sms.sender, allowedSender)) return@forEach
             val parsed = BankSmsParser.parse(sms.sender, sms.body, sms.receivedAtMillis)
             bankSmsDao.refreshParsedFields(
                 id = sms.id,

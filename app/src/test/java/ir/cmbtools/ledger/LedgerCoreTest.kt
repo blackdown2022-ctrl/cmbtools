@@ -8,7 +8,6 @@ import ir.cmbtools.ledger.core.Money
 import ir.cmbtools.ledger.core.PanelSyncRules
 import ir.cmbtools.ledger.core.Phone
 import ir.cmbtools.ledger.sms.BankSmsParser
-import ir.cmbtools.ledger.sms.BankSmsSenderFilter
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.data.Customer
 import ir.cmbtools.ledger.data.Invoice
@@ -86,21 +85,6 @@ class JalaliTest {
 }
 
 class BankSmsParserTest {
-
-    @Test
-    fun parses_compact_post_bank_amount_date_and_balance_format() {
-        val parsed = BankSmsParser.parse(
-            "10001234",
-            "پست بانکواريز به کارت: 2972+1,009,9101405/08/417:35مانده: 4,920,082 ريال",
-            0
-        )
-        assertEquals("پست بانک", parsed.bank)
-        assertEquals(1_009_910L, parsed.amountRial)
-        assertEquals("RIAL", parsed.amountUnit)
-        assertEquals(4_920_082L, parsed.balanceRial)
-        assertEquals("2972", parsed.last4)
-        assertTrue(parsed.isCredit)
-    }
 
     @Test
     fun detects_deposit_with_rial_unit() {
@@ -206,18 +190,6 @@ class BankSmsParserTest {
         assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(unknownBank))
         assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(reversal))
         assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(unrepresentableAmount))
-    }
-}
-
-class BankSmsSenderFilterTest {
-    @Test
-    fun only_the_exact_configured_sender_is_allowed() {
-        assertTrue(BankSmsSenderFilter.allows("+98 21-1234", "98211234"))
-        assertTrue(BankSmsSenderFilter.allows("پست بانک", "پستبانک"))
-        assertTrue(BankSmsSenderFilter.allows("پست‌بانک", "پست بانک"))
-        assertFalse(BankSmsSenderFilter.allows("982112340", "98211234"))
-        assertFalse(BankSmsSenderFilter.allows("98211234", ""))
-        assertFalse(BankSmsSenderFilter.allows("", "98211234"))
     }
 }
 

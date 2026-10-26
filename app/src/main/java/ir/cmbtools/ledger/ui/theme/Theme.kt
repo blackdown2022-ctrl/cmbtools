@@ -10,53 +10,41 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-/**
- * پوستهٔ روشن (سفید/کرم) — خواستهٔ کاربر: «رنگ اپ روشن باشد نه تیره».
- *
- * نام ثابت‌ها از نسخهٔ تیره باقی مانده تا بقیهٔ صفحه‌ها تغییر نکنند، ولی مقدارشان
- * برای پس‌زمینهٔ روشن تنظیم شده است (کنتراست کافی روی سفید).
- */
-val Navy = Color(0xFFF1F5F9)          // سطح دوم (کارت‌های کم‌رنگ)
-val NavyDeep = Color(0xFFF8FAFC)      // پس‌زمینهٔ کلی
-val CardDark = Color(0xFFE2E8F0)      // خط/سطح سوم
-val PrimaryCyan = Color(0xFF0E7490)   // رنگ اصلی (فیروزه‌ای تیره، خوانا روی سفید)
-val AccentGreen = Color(0xFF15803D)
-val AccentAmber = Color(0xFFB45309)
-val AccentRed = Color(0xFFDC2626)
-val TextMuted = Color(0xFF5B6B7F)     // متن ثانویه — تیره‌تر از قبل تا خوانا باشد
+// Tiznet palette: deep navy + saturated electric blue, balanced with high-contrast surfaces.
+val Navy = Color(0xFFEAF1FF)
+val NavyDeep = Color(0xFFF5F8FF)
+val CardDark = Color(0xFFD6E2F5)
+val PrimaryCyan = Color(0xFF155EEF)
+val AccentGreen = Color(0xFF16804A)
+val AccentAmber = Color(0xFFB45F06)
+val AccentRed = Color(0xFFCB3348)
+val TextMuted = Color(0xFF52627A)
 
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF0E7490),
+    primary = Color(0xFF155EEF),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFCFF3FA),
-    onPrimaryContainer = Color(0xFF06343E),
-    secondary = Color(0xFF0F766E),
+    primaryContainer = Color(0xFFDCE8FF),
+    onPrimaryContainer = Color(0xFF082B68),
+    secondary = Color(0xFF174AA6),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFCCFBF1),
-    onSecondaryContainer = Color(0xFF064E3B),
-    tertiary = Color(0xFFB45309),
+    secondaryContainer = Color(0xFFE4EDFF),
+    onSecondaryContainer = Color(0xFF102E66),
+    tertiary = Color(0xFF0F4DB8),
     onTertiary = Color.White,
-    background = Color(0xFFF8FAFC),
-    onBackground = Color(0xFF0F172A),
+    background = Color(0xFFF5F8FF),
+    onBackground = Color(0xFF101B31),
     surface = Color.White,
-    onSurface = Color(0xFF0F172A),
-    surfaceVariant = Color(0xFFF1F5F9),
-    onSurfaceVariant = Color(0xFF5B6B7F),
-    outline = Color(0xFFCBD5E1),
-    outlineVariant = Color(0xFFE2E8F0),
-    error = Color(0xFFDC2626),
+    onSurface = Color(0xFF101B31),
+    surfaceVariant = Color(0xFFEAF1FF),
+    onSurfaceVariant = Color(0xFF52627A),
+    outline = Color(0xFFB8C8E2),
+    outlineVariant = Color(0xFFD9E4F4),
+    error = Color(0xFFCB3348),
     onError = Color.White,
-    errorContainer = Color(0xFFFEE2E2),
-    onErrorContainer = Color(0xFF7F1D1D)
+    errorContainer = Color(0xFFFFE5E8),
+    onErrorContainer = Color(0xFF781D2C)
 )
 
-/**
- * فونت و اندازه‌ها.
- *
- * چرا بزرگ‌تر؟ شکایت کاربر: «اعداد فارسی خیلی کوچک هستند». اندازهٔ پایهٔ متن‌ها
- * تقریباً یک پله بالا رفته و ارتفاع خط هم بازتر شده تا ارقام فارسی (که در فونت
- * سیستم کوتاه‌تر از لاتین دیده می‌شوند) خوانا باشند.
- */
 private fun base(size: Float, weight: FontWeight = FontWeight.Normal, lineHeightExtra: Float = 6f) =
     TextStyle(
         fontFamily = FontFamily.SansSerif,
@@ -66,21 +54,20 @@ private fun base(size: Float, weight: FontWeight = FontWeight.Normal, lineHeight
     )
 
 private val AppTypography = Typography(
-    displaySmall = base(31f, FontWeight.Bold),
-    headlineMedium = base(27f, FontWeight.Bold),
-    headlineSmall = base(24f, FontWeight.Bold),
-    titleLarge = base(21f, FontWeight.Bold),
-    titleMedium = base(17.5f, FontWeight.SemiBold),
-    titleSmall = base(15.5f, FontWeight.SemiBold),
-    bodyLarge = base(16.5f),
-    bodyMedium = base(15f),
-    bodySmall = base(13.5f),
-    labelLarge = base(14.5f, FontWeight.SemiBold),
-    labelMedium = base(13f),
-    labelSmall = base(12f)
+    displaySmall = base(34f, FontWeight.Bold),
+    headlineMedium = base(29f, FontWeight.Bold),
+    headlineSmall = base(25f, FontWeight.Bold),
+    titleLarge = base(23f, FontWeight.Bold),
+    titleMedium = base(19f, FontWeight.SemiBold),
+    titleSmall = base(17f, FontWeight.SemiBold),
+    bodyLarge = base(18f),
+    bodyMedium = base(16f),
+    bodySmall = base(14.5f),
+    labelLarge = base(16f, FontWeight.SemiBold),
+    labelMedium = base(14f),
+    labelSmall = base(13f)
 )
 
-/** همیشه روشن. (اگر روزی حالت تیره خواسته شد، همین‌جا یک darkColorScheme اضافه شود.) */
 @Composable
 fun CmbTheme(content: @Composable () -> Unit) {
     MaterialTheme(

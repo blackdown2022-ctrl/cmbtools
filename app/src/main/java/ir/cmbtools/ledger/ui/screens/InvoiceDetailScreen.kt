@@ -78,7 +78,7 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
             subtitle = customer?.name,
             action = {
                 IconButton(onClick = { nav.popBackStack() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت", tint = TextMuted)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت", tint = MaterialTheme.colorScheme.onPrimary)
                 }
             }
         )

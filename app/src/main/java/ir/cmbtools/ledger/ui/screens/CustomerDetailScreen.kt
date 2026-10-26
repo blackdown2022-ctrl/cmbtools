@@ -95,10 +95,10 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
             action = {
                 Row {
                     IconButton(onClick = { showEdit = true }) {
-                        Icon(Icons.Default.Edit, contentDescription = "ویرایش", tint = PrimaryCyan)
+                        Icon(Icons.Default.Edit, contentDescription = "ویرایش", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                     IconButton(onClick = { nav.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت", tint = TextMuted)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             }

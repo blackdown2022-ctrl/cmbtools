@@ -71,7 +71,7 @@ fun PlansScreen(vm: AppViewModel, nav: NavHostController) {
                 subtitle = "قیمت و حجم و روز — پایهٔ صدور فاکتور",
                 action = {
                     IconButton(onClick = { nav.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت", tint = TextMuted)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             )

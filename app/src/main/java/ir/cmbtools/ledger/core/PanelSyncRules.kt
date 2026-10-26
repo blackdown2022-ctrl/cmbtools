@@ -13,23 +13,62 @@ object PanelSyncRules {
     /**
      * آیا این تغییرات «تمدید» است؟
      *
-     * حالت ۱ (رایج): تاریخ انقضا جلو رفته. اختلاف کمتر از ۱ روز نادیده گرفته می‌شود
-     *   تا تغییر ساعت/منطقه‌زمانی باعث فاکتور الکی نشود.
-     * حالت ۲: تمدید از داخل خود پنل با `start_date = null` انجام شده؛ در این حالت
-     *   تاریخ انقضا موقتاً خالی/کمتر می‌شود و روزها از «اولین اتصال بعدی» شمرده می‌شوند.
-     *   این را با «صفر شدن مصرف» تشخیص می‌دهیم (کاربر قبلاً مصرف داشته و اکنون ندارد).
+     * **تعریف تمدید در این اپ (همان تعریف پنل):** «روز» و «حجم» از نو تنظیم شود.
+     * یعنی یا شمارش روزها از ابتدا شروع شود، یا حجم/سقف بسته عوض شود و مصرف صفر گردد.
+     * هر کاربری در پنل که حجم و روزش ریست شده باشد، «تمدید شده» است — حتی اگر
+     * تاریخ انقضای قبلی‌اش دورتر بوده باشد (کاربر استفاده‌نشده).
+     *
+     * حالت‌هایی که تمدید حساب می‌شوند:
+     *  ۱) `start_date` پاک شده (`null`) — همان کاری که دکمهٔ «تمدید» پنل و اپ می‌کند؛
+     *     شمارش روزها از اولین اتصال بعدی شروع می‌شود.
+     *  ۲) تاریخ شروع دوره جلو رفته (تمدید با تاریخ دستی).
+     *  ۳) تاریخ انقضا بیش از ۱ روز جلو رفته (اختلاف ۱ روز = ساعت/منطقه‌زمانی).
+     *  ۴) مصرف صفر شده **و** روز/بسته هم عوض شده (ریست هم‌زمان حجم و روز).
+     *
+     * حالت «بستهٔ شروع‌نشده»: در نسخه‌های ۱۱–۱۳ تا اولین اتصال کاربر `start_date`
+     * خالی است، پس تاریخ انقضا فقط یک «پیش‌بینی روزانه» است و هر روز یک روز جلو
+     * می‌رود. در این حالت به تاریخ انقضا تکیه نمی‌کنیم و فقط تغییر خودِ بسته
+     * (روز/حجم) را نشانهٔ تمدید می‌گیریم.
      */
     fun isRenewal(
         oldExpireEpochDay: Long,
         newExpireEpochDay: Long,
         oldUsageGb: Double = 0.0,
-        newUsageGb: Double = 0.0
+        newUsageGb: Double = 0.0,
+        oldStartEpochDay: Long = 0,
+        newStartEpochDay: Long = 0,
+        oldDays: Int = 0,
+        newDays: Int = 0,
+        oldLimitGb: Double = 0.0,
+        newLimitGb: Double = 0.0,
+        oldNotStarted: Boolean = false,
+        newNotStarted: Boolean = false
     ): Boolean {
+        // خط پایه: کاربر تازه یا اکانتی که هنوز تاریخ انقضا ندارد
         if (oldExpireEpochDay <= 0) return false
+
+        // هر دو «شروع‌نشده»: انقضا فقط پیش‌بینی است، نه واقعیت
+        if (oldNotStarted && newNotStarted) {
+            val packageChanged = newDays > 0 && newDays != oldDays
+            val limitChanged = oldLimitGb > 0 &&
+                kotlin.math.abs(newLimitGb - oldLimitGb) > GB_TOLERANCE
+            return packageChanged || limitChanged
+        }
+
+        // ۱) شمارش روزها از نو: start_date پاک شده است
+        if (oldStartEpochDay > 0 && newStartEpochDay == 0L) return true
+        // ۲) تاریخ شروع دوره جلو رفته
+        if (oldStartEpochDay > 0 && newStartEpochDay > oldStartEpochDay + 1) return true
+        // ۳) تاریخ انقضا جلو رفته
         if (newExpireEpochDay > oldExpireEpochDay + 1) return true
-        // تمدید با ریست دوره در پنل: انقضا عقب/خالی شده و مصرف تقریباً صفر شده است
+
+        // ۴) حجم ریست شده و روز/بسته هم عوض شده → همان «ریست حجم و روز»
         val usageReset = oldUsageGb > 0.3 && newUsageGb + 0.3 < oldUsageGb
-        return newExpireEpochDay < oldExpireEpochDay && usageReset
+        if (!usageReset) return false
+        return newDays != oldDays ||
+            newExpireEpochDay != oldExpireEpochDay ||
+            newStartEpochDay != oldStartEpochDay ||
+            newNotStarted
     }
 
     /**

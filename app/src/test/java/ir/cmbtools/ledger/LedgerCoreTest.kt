@@ -164,6 +164,95 @@ class PanelSyncRulesTest {
     }
 
     @Test
+    fun renewal_means_days_and_volume_are_reset() {
+        // ۱) دکمهٔ تمدید پنل/اپ: start_date پاک می‌شود و روزها از نو شمرده می‌شوند
+        assertTrue(
+            PanelSyncRules.isRenewal(
+                oldExpireEpochDay = 20_100,
+                newExpireEpochDay = 20_030,
+                oldUsageGb = 0.0,
+                newUsageGb = 0.0,
+                oldStartEpochDay = 19_900,
+                newStartEpochDay = 0,
+                oldDays = 30,
+                newDays = 30
+            )
+        )
+
+        // ۲) کاربر استفاده‌نشده: انقضای قبلی دورتر است ولی روزها از نو شده → تمدید
+        assertTrue(
+            PanelSyncRules.isRenewal(
+                oldExpireEpochDay = 20_200,
+                newExpireEpochDay = 20_030,
+                oldUsageGb = 0.0,
+                newUsageGb = 0.0,
+                oldStartEpochDay = 19_900,
+                newStartEpochDay = 0,
+                oldDays = 30,
+                newDays = 30
+            )
+        )
+
+        // ۳) ریست هم‌زمان حجم و روز (مصرف صفر + بسته عوض شده) → تمدید
+        assertTrue(
+            PanelSyncRules.isRenewal(
+                oldExpireEpochDay = 20_100,
+                newExpireEpochDay = 20_100,
+                oldUsageGb = 12.0,
+                newUsageGb = 0.0,
+                oldStartEpochDay = 19_900,
+                newStartEpochDay = 19_900,
+                oldDays = 30,
+                newDays = 60
+            )
+        )
+
+        // ۴) فقط مصرف صفر شده، روز/بسته دست‌نخورده → تمدید نیست (ریست مصرف، نه تمدید)
+        assertFalse(
+            PanelSyncRules.isRenewal(
+                oldExpireEpochDay = 20_100,
+                newExpireEpochDay = 20_100,
+                oldUsageGb = 12.0,
+                newUsageGb = 0.0,
+                oldStartEpochDay = 19_900,
+                newStartEpochDay = 19_900,
+                oldDays = 30,
+                newDays = 30
+            )
+        )
+
+        // ۵) بستهٔ شروع‌نشده: انقضای «پیش‌بینی‌شده» هر روز جلو می‌رود؛
+        //    تا وقتی خود بسته عوض نشده، تمدید نیست (وگرنه هر روز فاکتور الکی)
+        assertFalse(
+            PanelSyncRules.isRenewal(
+                oldExpireEpochDay = 20_030,
+                newExpireEpochDay = 20_033,
+                oldUsageGb = 0.0,
+                newUsageGb = 0.0,
+                oldStartEpochDay = 0,
+                newStartEpochDay = 0,
+                oldDays = 30,
+                newDays = 30,
+                oldNotStarted = true,
+                newNotStarted = true
+            )
+        )
+        //    ولی اگر بسته عوض شود (تمدید بستهٔ شروع‌نشده) → تمدید
+        assertTrue(
+            PanelSyncRules.isRenewal(
+                oldExpireEpochDay = 20_030,
+                newExpireEpochDay = 20_060,
+                oldStartEpochDay = 0,
+                newStartEpochDay = 0,
+                oldDays = 30,
+                newDays = 60,
+                oldNotStarted = true,
+                newNotStarted = true
+            )
+        )
+    }
+
+    @Test
     fun matches_plan_by_gb_and_days() {
         val gbs = listOf(30.0, 50.0, 100.0)
         val days = listOf(30, 30, 60)
@@ -272,6 +361,60 @@ class InvoiceTemplateTest {
         val t = AppSettings.DEFAULT_INVOICE_TEMPLATE
         listOf("{customer}", "{invoiceNo}", "{datetime}", "{package}", "{total}", "{debt}", "{card}")
             .forEach { assertTrue("قالب پیش‌فرض باید $it را داشته باشد", t.contains(it)) }
+        // نام فروشگاه و لینک اشتراک از قالب حذف شده‌اند
+        assertFalse(t.contains("{business}"))
+        assertFalse(t.contains("{link}"))
+        // خط اول فقط نام مشتری است
+        assertEquals("{customer}", t.lines().first().trim())
+    }
+
+    @Test
+    fun invoice_sms_starts_with_customer_name_without_shop_or_link() {
+        val settings = AppSettings(businessName = "فروشگاه من", invoiceFooter = "با تشکر")
+        val body = SmsTemplate.render(
+            settings,
+            invoice(),
+            customer,
+            emptyList(),
+            "https://srv1.example.com/client987/8f14e45f-1111-2222-3333-444455556666/"
+        )
+        // ۱) خط اول فقط نام مشتری
+        assertEquals("علی رضایی", body.lines().first().trim())
+        // ۲) نام فروشگاه هرگز در پیامک نمی‌آید
+        assertFalse("نام فروشگاه نباید در پیامک باشد: $body", body.contains("فروشگاه من"))
+        // ۳) لینک اشتراک هم نمی‌آید
+        assertFalse("لینک اشتراک نباید در پیامک باشد: $body", body.contains("client987"))
+        assertFalse(body.contains("لینک اشتراک"))
+        assertFalse(body.contains("http"))
+        // بقیهٔ اطلاعات فاکتور سر جایشان هستند
+        assertTrue(body.contains("6037-9977-1234-5678"))
+        assertTrue(body.contains(Money.toPersian("1405-0042")))
+    }
+
+    @Test
+    fun shop_name_and_link_are_dropped_from_old_custom_templates_too() {
+        // قالب قدیمی دستی که کاربر ذخیره کرده بود
+        val old = "{business}\n{customer} عزیز\nمبلغ: {total}\n{link}\n{footer}"
+        val body = SmsTemplate.render(
+            AppSettings(businessName = "فروشگاه من", invoiceTemplate = old),
+            invoice(),
+            customer,
+            emptyList(),
+            "https://panel.example.com/client987/abc/"
+        )
+        assertFalse(body.contains("فروشگاه من"))
+        assertFalse(body.contains("client987"))
+        assertEquals("علی رضایی عزیز", body.lines().first().trim())
+    }
+
+    @Test
+    fun previous_default_templates_are_replaced_by_the_new_one() {
+        // قالب‌های پیش‌فرض نسخه‌های قبل باید با قالب جدید یکی نباشند تا مهاجرت انجام شود
+        assertTrue(AppSettings.LEGACY_INVOICE_TEMPLATE.contains("{business}"))
+        assertTrue(AppSettings.V03_INVOICE_TEMPLATE.contains("{business}"))
+        assertTrue(AppSettings.V03_INVOICE_TEMPLATE.contains("{link}"))
+        assertFalse(AppSettings.DEFAULT_INVOICE_TEMPLATE.contains("{business}"))
+        assertFalse(AppSettings.DEFAULT_INVOICE_TEMPLATE.contains("{link}"))
     }
 }
 

@@ -22,7 +22,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -89,6 +91,9 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
     var pricePerGb by remember { mutableStateOf(settings.pricePerGbRial) }
     var pin by remember { mutableStateOf("") }
 
+    // هر گروه تنظیمات سربرگ (تب) جداگانه دارد تا صفحه شلوغ و تو‌در‌تو نباشد.
+    var tab by remember { mutableStateOf(0) }
+
     LaunchedEffect(config) {
         config?.let {
             panelUrl = it.panelUrl
@@ -119,8 +124,29 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
     Column(Modifier.fillMaxSize()) {
         GradientHeader(
             title = "تنظیمات",
-            subtitle = "پنل هیدی‌فای، پیامک، فاکتور، همگام‌سازی و پشتیبان"
+            subtitle = "هر گروه تنظیمات، سربرگ جداگانه دارد"
         )
+
+        ScrollableTabRow(
+            selectedTabIndex = tab,
+            edgePadding = 6.dp,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = PrimaryCyan
+        ) {
+            SettingsTab.entries.forEachIndexed { index, item ->
+                Tab(
+                    selected = tab == index,
+                    onClick = { tab = index },
+                    text = {
+                        Text(
+                            item.title,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (tab == index) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                )
+            }
+        }
 
         Column(
             modifier = Modifier
@@ -136,7 +162,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
             //   ۲) کلید API (UUID ادمین)
             //   ۳) پایهٔ لینک اشتراک (مستقل از مسیر ادمین)
             // ─────────────────────────────────────────────────────────────
-            SectionCard(title = "اتصال به پنل هیدی‌فای") {
+            SectionCard(title = "اتصال به پنل هیدی‌فای", visible = tab == SettingsTab.PANEL.ordinal) {
                 Text(
                     "برای اینکه ساخت کاربر و لینک اشتراک درست کار کند، این سه مورد را پر کنید. " +
                         "اپ با نسخه‌های ۱۱ تا ۱۴ پنل هیدی‌فای کار می‌کند و مسیر/سبک درست را خودش پیدا می‌کند؛ " +
@@ -340,7 +366,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 )
             }
 
-            SectionCard(title = "همگام‌سازی و فاکتور خودکار") {
+            SectionCard(title = "همگام‌سازی و فاکتور خودکار", visible = tab == SettingsTab.SYNC.ordinal) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -434,7 +460,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 }
             }
 
-            SectionCard(title = "پیامک") {
+            SectionCard(title = "پیامک", visible = tab == SettingsTab.SMS.ordinal) {
                 DropdownField(
                     label = "روش ارسال",
                     items = listOf(SmsMode.GATEWAY, SmsMode.SIM),
@@ -457,19 +483,40 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     LabeledField("شمارهٔ خط/فرستنده", gatewaySender, { gatewaySender = it })
                 }
                 Spacer(Modifier.height(8.dp))
+                Text(
+                    "پیامک فاکتور با نام مشتری شروع می‌شود؛ نام فروشگاه و لینک اشتراک در آن درج نمی‌شود.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Spacer(Modifier.height(8.dp))
                 LabeledField(
                     "قالب پیامک فاکتور",
                     template,
                     { template = it },
                     singleLine = false,
-                    maxLines = 10
+                    maxLines = 12
                 )
                 Text(
-                    "متغیرها: {business} {customer} {invoiceNo} {datetime} {date} {package} {kind} " +
-                        "{items} {total} {prevBalance} {totalDebt} {debt} {card} {link} {footer}",
+                    "متغیرها: {customer} {invoiceNo} {datetime} {date} {package} {kind} " +
+                        "{items} {total} {prevBalance} {totalDebt} {debt} {card} {footer}",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )
+                Spacer(Modifier.height(8.dp))
+                // پیش‌نمایش با همان متنی که الان در کادر است (قبل از ذخیره هم دیده می‌شود)
+                Text("پیش‌نمایش پیامک:", style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(4.dp))
+                androidx.compose.material3.Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        ir.cmbtools.ledger.sms.SmsTemplate.preview(settings, template, footer),
+                        modifier = Modifier.padding(10.dp),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
                 TextButton(
                     onClick = {
                         template = AppSettings.DEFAULT_INVOICE_TEMPLATE
@@ -495,7 +542,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 ) { Text("ذخیرهٔ تنظیمات پیامک") }
             }
 
-            SectionCard(title = "پیامک بانکی") {
+            SectionCard(title = "پیامک بانکی", visible = tab == SettingsTab.SMS.ordinal) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -521,8 +568,13 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 ) { Text("ذخیره") }
             }
 
-            SectionCard(title = "کسب‌وکار") {
-                LabeledField("نام کسب‌وکار (در فاکتور)", businessName, { businessName = it })
+            SectionCard(title = "کسب‌وکار و بسته‌ها", visible = tab == SettingsTab.BUSINESS.ordinal) {
+                LabeledField("نام کسب‌وکار (عنوان داشبورد و صفحهٔ قفل)", businessName, { businessName = it })
+                Text(
+                    "این نام در پیامک فاکتور درج نمی‌شود؛ پیامک با نام مشتری شروع می‌شود.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = { vm.updateSettings { it.copy(businessName = businessName) } },
@@ -539,7 +591,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 }
             }
 
-            SectionCard(title = "امنیت") {
+            SectionCard(title = "امنیت", visible = tab == SettingsTab.SECURITY.ordinal) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -581,7 +633,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 }
             }
 
-            SectionCard(title = "پشتیبان‌گیری و بازیابی") {
+            SectionCard(title = "پشتیبان‌گیری و بازیابی", visible = tab == SettingsTab.BACKUP.ordinal) {
                 Text(
                     "این تنها جای پشتیبان‌گیری برنامه است. فایل JSON شامل همهٔ این‌ها است:",
                     style = MaterialTheme.typography.bodyMedium
@@ -624,7 +676,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 )
             }
 
-            SectionCard(title = "درباره") {
+            SectionCard(title = "درباره", visible = tab == SettingsTab.ABOUT.ordinal) {
                 Text(
                     "تیزنت — نسخهٔ " + Money.toPersian(BuildConfig.VERSION_NAME),
                     fontWeight = FontWeight.SemiBold
@@ -636,7 +688,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     style = MaterialTheme.typography.labelMedium
                 )
                 Text(
-                    "اپ شخصی حسابداری + مدیریت پنل هیدی‌فای ۱۴. ساخته‌شده برای استفادهٔ تک‌کاربره روی گوشی خودتان.",
+                    "اپ شخصی حسابداری + مدیریت پنل هیدی‌فای ۱۱ تا ۱۴. ساخته‌شده برای استفادهٔ تک‌کاربره روی گوشی خودتان.",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )
@@ -686,4 +738,22 @@ private fun EndpointLine(label: String, value: String) {
         Text(label, color = TextMuted, style = MaterialTheme.typography.labelMedium)
         Text(value, style = MaterialTheme.typography.bodySmall)
     }
+}
+
+
+/**
+ * سربرگ‌های صفحهٔ تنظیمات.
+ *
+ * هر گروه تنظیمات یک سربرگ جداگانه دارد تا کاربر لازم نباشد برای رسیدن به
+ * «پیامک» از وسط «پنل» عبور کند. ترتیب `ordinal` با `when`/`if`های بالا یکی است،
+ * پس اگر سربرگی جابه‌جا شد فقط همین لیست را تغییر دهید.
+ */
+private enum class SettingsTab(val title: String) {
+    PANEL("پنل هیدی‌فای"),
+    SYNC("همگام‌سازی و فاکتور"),
+    SMS("پیامک"),
+    BUSINESS("کسب‌وکار"),
+    SECURITY("امنیت"),
+    BACKUP("پشتیبان"),
+    ABOUT("درباره")
 }

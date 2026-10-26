@@ -84,7 +84,8 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
     var showEdit by remember { mutableStateOf(false) }
     var showPayment by remember { mutableStateOf(false) }
     var showAdjust by remember { mutableStateOf(false) }
-    var showRenew by remember { mutableStateOf(false) }
+    // تمدید: می‌تواند از دکمهٔ بالای صفحه (اولین اکانت) یا از دکمهٔ هر اکانت در تب «پنل» باز شود
+    var renewTarget by remember { mutableStateOf<ir.cmbtools.ledger.data.PanelAccount?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         GradientHeader(
@@ -158,7 +159,7 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (accounts.isNotEmpty()) {
-                        Button(onClick = { showRenew = true }, modifier = Modifier.weight(1f)) {
+                        Button(onClick = { renewTarget = accounts.first() }, modifier = Modifier.weight(1f)) {
                             Text("تمدید اکانت")
                         }
                         OutlinedButton(onClick = { vm.sendReminder(customerId) }, modifier = Modifier.weight(1f)) {
@@ -270,6 +271,13 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
                                         color = TextMuted, style = MaterialTheme.typography.labelMedium
                                     )
                                     Text(acc.panelUserUuid, color = TextMuted, style = MaterialTheme.typography.labelMedium)
+                                    if (acc.lastRenewedAtMillis > 0) {
+                                        Text(
+                                            "آخرین تمدید: " + Jalali.formatDateTime(acc.lastRenewedAtMillis),
+                                            color = PrimaryCyan,
+                                            style = MaterialTheme.typography.labelMedium
+                                        )
+                                    }
                                 }
                                 StatusPill(
                                     if (acc.enabled) "فعال" else "غیرفعال",
@@ -278,11 +286,17 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
                             }
                             Spacer(Modifier.height(8.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                // تمدید = ریست حجم و روز (همان تعریف پنل)
+                                Button(onClick = { renewTarget = acc }) {
+                                    Text("تمدید")
+                                }
                                 OutlinedButton(onClick = { vm.toggleAccount(acc) }) {
                                     Text(if (acc.enabled) "غیرفعال کن" else "فعال کن")
                                 }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = { vm.extendAccount(acc, 10.0, 30) }) {
-                                    Text("+۱۰ گیگ / ۳۰ روز")
+                                    Text("+۱۰ گیگ / ۳۰ روز (بدون ریست)")
                                 }
                                 if (acc.subscriptionUrl.isNotBlank()) {
                                     TextButton(onClick = { vm.copyToClipboard(acc.subscriptionUrl) }) {
@@ -312,14 +326,16 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
     if (showAdjust) {
         AdjustDialog(vm = vm, customerId = customerId, onDismiss = { showAdjust = false })
     }
-    if (showRenew && accounts.isNotEmpty()) {
+    renewTarget?.let { acc ->
         RenewDialog(
             vm = vm,
             customerId = customerId,
-            panelUuid = accounts.first().panelUserUuid,
+            panelUuid = acc.panelUserUuid,
             plans = plans,
-            onDismiss = { showRenew = false },
-            onDone = { showRenew = false }
+            initialGb = acc.gb,
+            initialDays = acc.days,
+            onDismiss = { renewTarget = null },
+            onDone = { renewTarget = null }
         )
     }
 }
@@ -481,12 +497,15 @@ private fun RenewDialog(
     customerId: Long,
     panelUuid: String,
     plans: List<ir.cmbtools.ledger.data.Plan>,
+    initialGb: Double = 0.0,
+    initialDays: Int = 0,
     onDismiss: () -> Unit,
     onDone: () -> Unit
 ) {
     var plan by remember { mutableStateOf<ir.cmbtools.ledger.data.Plan?>(null) }
-    var gb by remember { mutableStateOf("30") }
-    var days by remember { mutableStateOf("30") }
+    // مقدار اولیه از خود اکانت (همان حجم/روزی که الان دارد) تا تمدید یک‌کلیکی باشد
+    var gb by remember { mutableStateOf(if (initialGb > 0) trimGb(initialGb) else "30") }
+    var days by remember { mutableStateOf(if (initialDays > 0) initialDays.toString() else "30") }
     var price by remember { mutableStateOf(0L) }
     var description by remember { mutableStateOf("تمدید سرویس") }
     var sendSms by remember { mutableStateOf(vm.settings.value.autoSmsOnInvoice) }
@@ -494,14 +513,22 @@ private fun RenewDialog(
     var error by remember { mutableStateOf("") }
 
     // همان ریشهٔ باگ فرم فاکتور: اگر بسته‌ها بعد از باز شدن دیالوگ برسند، قیمت صفر می‌ماند.
+    // اگر از کارت یک اکانتِ موجود باز شده باشیم، حجم/روزِ همان اکانت حفظ می‌شود و
+    // فقط نزدیک‌ترین بسته (برای قیمت) انتخاب می‌شود.
     LaunchedEffect(plans) {
         if (plan == null && plans.isNotEmpty()) {
-            val first = plans.first()
-            plan = first
-            description = first.name
-            gb = first.gb.toString()
-            days = first.days.toString()
-            if (first.priceRial > 0) price = first.priceRial
+            val match = ir.cmbtools.ledger.core.PanelSyncRules.bestPlanIndex(
+                gbs = plans.map { it.gb.toDouble() },
+                daysList = plans.map { it.days },
+                gb = initialGb,
+                days = initialDays
+            )
+            val chosen = plans.getOrNull(match) ?: plans.first()
+            plan = chosen
+            description = chosen.name
+            if (initialGb <= 0) gb = chosen.gb.toString()
+            if (initialDays <= 0) days = chosen.days.toString()
+            if (chosen.priceRial > 0) price = chosen.priceRial
         }
     }
 
@@ -555,7 +582,9 @@ private fun RenewDialog(
                     androidx.compose.material3.Switch(checked = sendSms, onCheckedChange = { sendSms = it })
                 }
                 Text(
-                    "مصرف اکانت صفر می‌شود و شمارش روزها از اولین اتصال بعدی شروع می‌شود (همان رفتار دکمهٔ تمدید پنل).",
+                    "تمدید = ریست کردن حجم و روز: مصرف فعلی صفر می‌شود، سقف حجم و تعداد روز " +
+                        "برابر بستهٔ جدید می‌شود و شمارش روز از اولین اتصال بعدی شروع می‌شود " +
+                        "(همان کاری که دکمهٔ تمدید پنل انجام می‌دهد).",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )
@@ -602,3 +631,7 @@ private fun RenewDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("انصراف") } }
     )
 }
+
+/** «۳۰.۰» → «۳۰» و «۳۰.۵» → «۳۰.۵» — برای پیش‌پرکردن فیلد حجم در دیالوگ تمدید */
+private fun trimGb(value: Double): String =
+    if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()

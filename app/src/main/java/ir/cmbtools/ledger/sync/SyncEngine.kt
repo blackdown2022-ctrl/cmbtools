@@ -53,7 +53,8 @@ data class SyncReport(
  * همگام‌سازی هوشمند پنل:
  *  ۱) کاربران پنل را می‌خواند و به مشتری محلی وصل می‌کند.
  *  ۲) کاربر تازه را تشخیص می‌دهد و (اگر روشن باشد) برایش فاکتور می‌سازد.
- *  ۳) تمدید را از روی جلو رفتن تاریخ انقضا تشخیص می‌دهد و فاکتور تمدید می‌سازد.
+ *  ۳) تمدید را از روی «ریست شدن روز و حجم» تشخیص می‌دهد (پاک شدن start_date،
+ *     جلو رفتن تاریخ شروع/انقضا، یا ریست هم‌زمان مصرف و بسته) و فاکتور تمدید می‌سازد.
  *  ۴) فاکتور را بلافاصله با پیامک برای شمارهٔ ثبت‌شده می‌فرستد.
  *
  * ضد تکرار:
@@ -119,16 +120,27 @@ class SyncEngine(
             val newExpire = u.expireEpochDay
             val oldExpire = old?.expireEpochDay ?: 0L
             var lastInvoicedExpire = old?.lastInvoicedExpireEpochDay ?: 0L
+            val newStart = PanelClient.parseEpochDay(u.startDate)
 
             val isNewUser = old == null
-            // بستهٔ شروع‌نشده (start_date خالی در نسخه‌های ۱۱–۱۳) تاریخ قطعی ندارد؛
-            // انقضای «پیش‌بینی‌شده» هر روز یک روز جلو می‌رود، پس تمدید حساب نمی‌شود.
-            val renewed = !isNewUser && !u.notStarted && PanelSyncRules.isRenewal(
+            // «تمدید» = ریست شدن روز و حجم. همهٔ نشانه‌ها (پاک شدن start_date، جلو رفتن
+            // تاریخ شروع/انقضا، و ریست هم‌زمان مصرف و بسته) به PanelSyncRules داده می‌شود.
+            val renewed = !isNewUser && PanelSyncRules.isRenewal(
                 oldExpireEpochDay = oldExpire,
                 newExpireEpochDay = newExpire,
                 oldUsageGb = old?.usageGb ?: 0.0,
-                newUsageGb = u.currentUsageGb
+                newUsageGb = u.currentUsageGb,
+                oldStartEpochDay = old?.startEpochDay ?: 0L,
+                newStartEpochDay = newStart,
+                oldDays = old?.days ?: 0,
+                newDays = u.packageDays,
+                oldLimitGb = old?.gb ?: 0.0,
+                newLimitGb = u.usageLimitGb,
+                oldNotStarted = (old?.startEpochDay ?: 0L) == 0L,
+                newNotStarted = u.notStarted
             )
+            // زمان آخرین تمدید برای نمایش در کارت اکانت («آخرین تمدید: ...»)
+            val renewedAt = if (renewed) System.currentTimeMillis() else (old?.lastRenewedAtMillis ?: 0L)
 
             if (firstRun) {
                 // خط پایه: فقط ثبت وضعیت، بدون فاکتور
@@ -206,14 +218,15 @@ class SyncEngine(
                     name = u.name,
                     gb = u.usageLimitGb,
                     days = u.packageDays,
-                    startEpochDay = PanelClient.parseEpochDay(u.startDate),
+                    startEpochDay = newStart,
                     expireEpochDay = newExpire,
                     usageGb = u.currentUsageGb,
                     enabled = u.enable,
                     status = u.statusOrComputed,
                     subscriptionUrl = client.subscriptionUrl(u.uuid, linkBase),
                     prevExpireEpochDay = oldExpire,
-                    lastInvoicedExpireEpochDay = lastInvoicedExpire
+                    lastInvoicedExpireEpochDay = lastInvoicedExpire,
+                    lastRenewedAtMillis = renewedAt
                 )
             )
         }

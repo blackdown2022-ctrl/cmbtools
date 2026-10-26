@@ -56,7 +56,7 @@ data class Invoice(
     /** UUID اکانت ساخته‌شده در پنل هیدی‌فای (اگر ساخته شده باشد) */
     val panelUserUuid: String = "",
     val panelId: Long = 0,
-    /** لینک اشتراک که در پیامک ارسال شد */
+    /** لینک اشتراک اکانت (برای کپی/ارسال دستی؛ دیگر داخل پیامک فاکتور نمی‌آید) */
     val subscriptionUrl: String = "",
     val planId: Long = 0,
     // ── عکس فوری سند فاکتور (تا بعداً با تغییر تنظیمات/قیمت‌ها عوض نشود) ──
@@ -248,6 +248,11 @@ data class PanelAccount(
     val prevExpireEpochDay: Long = 0,
     /** آخرین انقضایی که برایش فاکتور صادر شد (ضد فاکتور تکراری) */
     val lastInvoicedExpireEpochDay: Long = 0,
+    /**
+     * زمان آخرین «تمدید» (ریست روز و حجم).
+     * هم وقتی اپ تمدید می‌کند و هم وقتی همگام‌سازی از پنل تشخیص می‌دهد پر می‌شود.
+     */
+    val lastRenewedAtMillis: Long = 0,
     val syncedAt: Long = System.currentTimeMillis()
 )
 

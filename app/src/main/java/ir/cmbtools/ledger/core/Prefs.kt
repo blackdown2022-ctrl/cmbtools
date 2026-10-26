@@ -47,14 +47,21 @@ data class AppSettings(
 ) {
     companion object {
         /**
-         * ساختار فاکتور خواسته‌شده: نام مشتری، تاریخ و ساعت، شمارهٔ فاکتور،
-         * نوع بسته، شمارهٔ کارت و (در صورت بدهی قبلی) مانده قبلی + جمع کل بدهی.
+         * ساختار فاکتور خواسته‌شده:
+         *  • خط اول فقط نام مشتری
+         *  • بدون نام فروشگاه
+         *  • بدون لینک اشتراک
+         * بعد از آن: شمارهٔ فاکتور، تاریخ و ساعت، بسته، مبلغ،
+         * شمارهٔ کارت و (در صورت بدهی قبلی) مانده قبلی + جمع کل بدهی.
          *
-         * متغیرها:
-         *  {business} {customer} {invoiceNo} {datetime} {date} {package} {items}
-         *  {total} {prevBalance} {totalDebt} {debt} {card} {kind} {link} {footer}
+         * متغیرهای قابل استفاده:
+         *  {customer} {invoiceNo} {datetime} {date} {package} {items}
+         *  {total} {prevBalance} {totalDebt} {debt} {card} {kind} {footer}
+         *
+         * (`{business}` و `{link}` حذف شده‌اند؛ اگر در قالب دستی مانده باشند،
+         *  خالی جایگزین می‌شوند تا نام فروشگاه/لینک در پیامک نیاید.)
          */
-        /** قالب نسخهٔ قبل — برای مهاجرت خودکار به قالب ساختاریافته */
+        /** قالب نسخهٔ ۰.۲ — برای مهاجرت خودکار */
         const val LEGACY_INVOICE_TEMPLATE =
             "{business}\n" +
                 "فاکتور {invoiceNo}\n" +
@@ -65,7 +72,8 @@ data class AppSettings(
                 "{link}\n" +
                 "{footer}"
 
-        const val DEFAULT_INVOICE_TEMPLATE =
+        /** قالب نسخه‌های ۰.۳.۰ تا ۰.۳.۳ — برای مهاجرت خودکار به قالب ۰.۴.۰ */
+        const val V03_INVOICE_TEMPLATE =
             "{business}\n" +
                 "فاکتور {invoiceNo}\n" +
                 "مشتری: {customer}\n" +
@@ -75,6 +83,16 @@ data class AppSettings(
                 "{debt}" +
                 "کارت: {card}\n" +
                 "{link}\n" +
+                "{footer}"
+
+        const val DEFAULT_INVOICE_TEMPLATE =
+            "{customer}\n" +
+                "فاکتور {invoiceNo}\n" +
+                "تاریخ: {datetime}\n" +
+                "بسته: {package}\n" +
+                "مبلغ: {total}\n" +
+                "{debt}" +
+                "کارت: {card}\n" +
                 "{footer}"
     }
 }
@@ -132,7 +150,12 @@ class Prefs(context: Context) {
             // اگر کاربر قالب پیش‌فرض قدیمی را (بدون تاریخ‌وساعت/بسته/کارت/بدهی) داشت،
             // خودکار به قالب ساختاریافتهٔ جدید ارتقا می‌یابد. قالب‌های دستی دست‌نخورده می‌مانند.
             invoiceTemplate = (sp.getString("invoiceTemplate", defaults.invoiceTemplate) ?: defaults.invoiceTemplate)
-                .let { if (it.trim() == AppSettings.LEGACY_INVOICE_TEMPLATE.trim()) defaults.invoiceTemplate else it },
+                .let { saved ->
+                    // ارتقای قالب‌های پیش‌فرض نسخه‌های قبل (قالب‌های دستی دست‌نخورده می‌مانند)
+                    if (saved.trim() == AppSettings.LEGACY_INVOICE_TEMPLATE.trim() ||
+                        saved.trim() == AppSettings.V03_INVOICE_TEMPLATE.trim()
+                    ) defaults.invoiceTemplate else saved
+                },
             fallbackSubscriptionBase = sp.getString("fallbackSubscriptionBase", "") ?: "",
             autoMatchBankSms = sp.getBoolean("autoMatchBankSms", true),
             autoMatchMaxRial = sp.getLong("autoMatchMaxRial", defaults.autoMatchMaxRial),

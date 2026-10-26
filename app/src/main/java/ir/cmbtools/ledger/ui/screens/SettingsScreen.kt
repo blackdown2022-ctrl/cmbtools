@@ -81,6 +81,13 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
         if (granted) vm.updateSettings { it.copy(smsMode = SmsMode.SIM) }
         else vm.report("مجوز ارسال پیامک داده نشد؛ روش درگاه پیامکی فعال می‌ماند", isError = true)
     }
+    val receiveSmsPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        vm.report(
+            if (granted) "مجوز دریافت پیامک فعال شد"
+            else "مجوز دریافت پیامک داده نشد؛ فرمان تمدید پیامکی کار نخواهد کرد",
+            isError = !granted
+        )
+    }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         vm.setAutoSyncEnabled(true)
         if (!granted) vm.report("همگام‌سازی روشن شد؛ اما اعلان‌های آن در تنظیمات اندروید خاموش است")
@@ -110,6 +117,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
     var template by remember { mutableStateOf(settings.invoiceTemplate) }
     var gatewayKey by remember { mutableStateOf(settings.gatewayApiKey) }
     var gatewaySender by remember { mutableStateOf(settings.gatewaySender) }
+    var renewalCommandSender by remember { mutableStateOf(settings.renewalCommandSender) }
     var autoMatchMax by remember { mutableStateOf(settings.autoMatchMaxRial) }
     var cardNumber by remember { mutableStateOf(settings.paymentCardNumber) }
     var pricePerGb by remember { mutableStateOf(settings.pricePerGbRial) }
@@ -640,6 +648,45 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("ذخیرهٔ تنظیمات پیامک") }
+            }
+
+            SectionCard(title = "تمدید با پیامک فرمانی", visible = tab == SettingsTab.SMS.ordinal) {
+                LabeledField(
+                    "شمارهٔ مجاز فرستنده",
+                    renewalCommandSender,
+                    { renewalCommandSender = it },
+                    keyboardType = KeyboardType.Phone
+                )
+                Text(
+                    "فقط پیامک از همین شماره و با قالب دقیق زیر فرمان محسوب می‌شود. نام مشتری باید دقیق باشد و اگر چند اکانت برای او باشد، فرمان رد می‌شود.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Spacer(Modifier.height(6.dp))
+                Text("تمدید\nنام مشتری\n۳۰", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "حجم باید بستهٔ قیمت‌گذاری‌شده داشته باشد؛ مدت همان مدت بستهٔ فعلی اکانت می‌ماند. شمارهٔ خالی، فرمان را غیرفعال می‌کند.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
+                    OutlinedButton(
+                        onClick = { receiveSmsPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("درخواست مجوز دریافت پیامک") }
+                }
+                Button(
+                    onClick = {
+                        vm.updateSettings { it.copy(renewalCommandSender = renewalCommandSender.trim()) }
+                        vm.report(if (renewalCommandSender.isBlank()) "فرمان تمدید پیامکی غیرفعال شد" else "شمارهٔ مجاز فرمان تمدید ذخیره شد")
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("ذخیرهٔ شمارهٔ مجاز") }
+                Text(
+                    "فرستندهٔ پیامک قابل جعل است؛ فقط از شماره‌ای استفاده کنید که در اختیار خودتان است و فرستنده را راز یا تأیید مستقل بانکی فرض نکنید.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelSmall
+                )
             }
 
             SectionCard(title = "پیامک بانکی", visible = tab == SettingsTab.SMS.ordinal) {

@@ -255,6 +255,12 @@ interface PanelDao {
     @Query("SELECT * FROM panel_accounts WHERE customerId = :customerId")
     fun observeAccountsOf(customerId: Long): Flow<List<PanelAccount>>
 
+    @Query("SELECT * FROM panel_accounts WHERE customerId = :customerId")
+    suspend fun accountsOf(customerId: Long): List<PanelAccount>
+
+    @Query("UPDATE panel_accounts SET autoRenewEnabled = :enabled WHERE panelUserUuid = :uuid")
+    suspend fun setAutoRenew(uuid: String, enabled: Boolean)
+
     @Query("SELECT * FROM panel_accounts WHERE panelUserUuid = :uuid LIMIT 1")
     suspend fun byPanelUuid(uuid: String): PanelAccount?
 

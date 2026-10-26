@@ -38,6 +38,8 @@ data class AppSettings(
     val autoInvoiceOnRenew: Boolean = true,
     /** فاکتور بلافاصله با پیامک برای مشتری ارسال شود */
     val autoSmsOnInvoice: Boolean = true,
+    /** Origin address allowlist for exact three-line SMS renewal commands; blank disables commands. */
+    val renewalCommandSender: String = "",
     /** اگر کاربر پنل مشتری محلی نداشت، مشتری خودکار ساخته شود */
     val autoCreateCustomerFromPanel: Boolean = true,
     /** شمارهٔ کارت فروشگاه که در فاکتور درج می‌شود */
@@ -185,6 +187,7 @@ class Prefs(context: Context) {
             autoInvoiceOnNewAccount = sp.getBoolean("autoInvoiceOnNewAccount", true),
             autoInvoiceOnRenew = sp.getBoolean("autoInvoiceOnRenew", true),
             autoSmsOnInvoice = sp.getBoolean("autoSmsOnInvoice", true),
+            renewalCommandSender = sp.getString("renewalCommandSender", "") ?: "",
             autoCreateCustomerFromPanel = sp.getBoolean("autoCreateCustomerFromPanel", true),
             paymentCardNumber = sp.getString("paymentCardNumber", "") ?: "",
             pricePerGbRial = sp.getLong("pricePerGbRial", 0)
@@ -214,6 +217,7 @@ class Prefs(context: Context) {
             .putBoolean("autoInvoiceOnNewAccount", next.autoInvoiceOnNewAccount)
             .putBoolean("autoInvoiceOnRenew", next.autoInvoiceOnRenew)
             .putBoolean("autoSmsOnInvoice", next.autoSmsOnInvoice)
+            .putString("renewalCommandSender", next.renewalCommandSender)
             .putBoolean("autoCreateCustomerFromPanel", next.autoCreateCustomerFromPanel)
             .putString("paymentCardNumber", next.paymentCardNumber)
             .putLong("pricePerGbRial", next.pricePerGbRial)

@@ -285,6 +285,24 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: Long, nav: NavHostControl
                                 )
                             }
                             Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                    Text("تمدید خودکار", style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        "پس از اتمام حجم یا روزهای بسته، تمدید و فاکتور صادر می‌شود",
+                                        color = TextMuted,
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                                androidx.compose.material3.Switch(
+                                    checked = acc.autoRenewEnabled,
+                                    onCheckedChange = { vm.setAccountAutoRenew(acc, it) }
+                                )
+                            }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 // تمدید = ریست حجم و روز (همان تعریف پنل)
                                 Button(onClick = { renewTarget = acc }) {

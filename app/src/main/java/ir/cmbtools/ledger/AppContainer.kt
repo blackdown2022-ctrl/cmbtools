@@ -11,6 +11,7 @@ import ir.cmbtools.ledger.data.ReportingRepository
 import ir.cmbtools.ledger.panel.PanelClient
 import ir.cmbtools.ledger.panel.PanelService
 import ir.cmbtools.ledger.sms.PaymentMatcher
+import ir.cmbtools.ledger.sms.RenewalSmsCommandProcessor
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.sync.SyncEngine
 
@@ -48,9 +49,10 @@ class AppContainer(context: Context) {
 
     /** موتور صورت‌حساب خودکار (فاکتور + پیامک) — مشترک بین UI و همگام‌سازی پس‌زمینه */
     val billing = AutoBilling(invoices, customersDao, plansDao, smsSender, prefs)
+    val renewalSmsCommandProcessor = RenewalSmsCommandProcessor(prefs, panelDao, panelService, billing)
 
     /** همگام‌سازی هوشمند پنل: کاربر جدید/تمدید → فاکتور خودکار */
-    val syncEngine = SyncEngine(panelClient, panelDao, customersDao, billing, prefs)
+    val syncEngine = SyncEngine(panelClient, panelService, panelDao, customersDao, billing, prefs)
 
     fun plans() = plansDao
     fun expensesDao() = expensesDao

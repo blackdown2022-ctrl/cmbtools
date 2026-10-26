@@ -97,11 +97,47 @@ class BankSmsParserTest {
     }
 
     @Test
-    fun assumes_toman_when_unit_missing() {
-        val body = "واریز ۵۰۰٬۰۰۰ به حساب شما"
-        val parsed = BankSmsParser.parse("9999", body, 0)
+    fun assumes_toman_for_local_display_when_unit_missing_but_marks_it_uncertain() {
+        val body = "واریز ۵۰۰٬۰۰۰ به حساب شما کد پیگیری 12345678"
+        val parsed = BankSmsParser.parse("bankmellat", body, 0)
         assertEquals(5_000_000L, parsed.amountRial)
+        assertEquals("ASSUMED_TOMAN", parsed.amountUnit)
         assertTrue(parsed.isCredit)
+        assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(parsed))
+    }
+
+    @Test
+    fun prefers_transaction_amount_over_a_balance_that_appears_first() {
+        val parsed = BankSmsParser.parse(
+            "bankmellat",
+            "موجودی: ۹٬۹۰۰٬۰۰۰ ریال\nواریز مبلغ: ۱٬۲۰۰٬۰۰۰ ریال\nکد پیگیری: 12345678",
+            0
+        )
+        assertEquals(1_200_000L, parsed.amountRial)
+        assertEquals("RIAL", parsed.amountUnit)
+    }
+
+    @Test
+    fun does_not_treat_balance_alone_as_transaction_amount() {
+        val parsed = BankSmsParser.parse(
+            "bankmellat",
+            "موجودی: ۹٬۹۰۰٬۰۰۰ ریال",
+            0
+        )
+        assertEquals(0L, parsed.amountRial)
+        assertEquals(9_900_000L, parsed.balanceRial)
+    }
+
+    @Test
+    fun converts_explicit_toman_without_guessing() {
+        val parsed = BankSmsParser.parse(
+            "bankmellat",
+            "واریز مبلغ ۱۲۳٬۴۵۶ تومان\nکد پیگیری: 12345678",
+            0
+        )
+        assertEquals(1_234_560L, parsed.amountRial)
+        assertEquals("TOMAN", parsed.amountUnit)
+        assertTrue(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(parsed))
     }
 
     @Test

@@ -124,6 +124,7 @@ data class BotPaymentAudit(
     val state: String = "",
     val bank: String = "",
     val amountRial: Long = 0L,
+    val amountUnit: String = "",
     val reference: String = "",
     val orderId: String = "",
     val message: String = "",
@@ -159,6 +160,7 @@ class Prefs(context: Context) {
         state = sp.getString("botAuditState", "") ?: "",
         bank = sp.getString("botAuditBank", "") ?: "",
         amountRial = sp.getLong("botAuditAmountRial", 0L),
+        amountUnit = sp.getString("botAuditAmountUnit", "") ?: "",
         reference = sp.getString("botAuditReference", "") ?: "",
         orderId = sp.getString("botAuditOrderId", "") ?: "",
         message = sp.getString("botAuditMessage", "") ?: "",
@@ -171,6 +173,7 @@ class Prefs(context: Context) {
             .putString("botAuditState", audit.state)
             .putString("botAuditBank", audit.bank)
             .putLong("botAuditAmountRial", audit.amountRial)
+            .putString("botAuditAmountUnit", audit.amountUnit)
             .putString("botAuditReference", audit.reference)
             .putString("botAuditOrderId", audit.orderId)
             .putString("botAuditMessage", audit.message)

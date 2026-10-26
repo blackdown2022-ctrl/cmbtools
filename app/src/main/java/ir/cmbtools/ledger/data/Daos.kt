@@ -287,12 +287,6 @@ interface BankSmsDao {
     @Query("SELECT * FROM bank_sms WHERE id = :id")
     suspend fun byId(id: Long): BankSms?
 
-    @Query("SELECT * FROM bank_sms WHERE matchStatus = 'UNMATCHED' AND paymentId = 0")
-    suspend fun unmatchedForReparse(): List<BankSms>
-
-    @Query("UPDATE bank_sms SET amountRial = :amountRial, last4 = :last4, balanceRial = :balanceRial, bank = :bank, isCredit = :isCredit WHERE id = :id AND matchStatus = 'UNMATCHED' AND paymentId = 0")
-    suspend fun refreshParsedFields(id: Long, amountRial: Long, last4: String, balanceRial: Long, bank: String, isCredit: Boolean)
-
     @Query("SELECT * FROM bank_sms WHERE rawHash = :hash LIMIT 1")
     suspend fun byHash(hash: String): BankSms?
 

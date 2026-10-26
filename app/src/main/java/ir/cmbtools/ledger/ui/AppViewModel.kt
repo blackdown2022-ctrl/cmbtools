@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import ir.cmbtools.ledger.AppContainer
 import ir.cmbtools.ledger.LedgerApp
 import ir.cmbtools.ledger.core.AppSettings
-import ir.cmbtools.ledger.core.BotPaymentAudit
 import ir.cmbtools.ledger.core.InvoiceKind
 import ir.cmbtools.ledger.core.InvoiceStatus
 import ir.cmbtools.ledger.core.Jalali
@@ -32,9 +31,6 @@ import ir.cmbtools.ledger.data.Plan
 import ir.cmbtools.ledger.data.SmsOutbox
 import ir.cmbtools.ledger.panel.PanelConnection
 import ir.cmbtools.ledger.panel.PanelException
-import ir.cmbtools.ledger.sms.BotOrderStatusResult
-import ir.cmbtools.ledger.sms.BotPaymentClient
-import ir.cmbtools.ledger.sms.BotPaymentResult
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.sms.SmsTemplate
 import ir.cmbtools.ledger.sync.AutoSyncController
@@ -102,13 +98,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** پیشرفت کارهای طولانی (همگام‌سازی/ساخت کاربر) برای نمایش متن مرحله */
     private val _busyText = MutableStateFlow("")
     val busyText: StateFlow<String> = _busyText.asStateFlow()
-
-    private val _botConnectionResult = MutableStateFlow<BotPaymentResult?>(null)
-    val botConnectionResult: StateFlow<BotPaymentResult?> = _botConnectionResult.asStateFlow()
-    private var testedBotConfig: Pair<String, String>? = null
-    val botAudit: StateFlow<BotPaymentAudit> = c.prefs.botAudit
-    private val _botOrderStatus = MutableStateFlow<BotOrderStatusResult?>(null)
-    val botOrderStatus: StateFlow<BotOrderStatusResult?> = _botOrderStatus.asStateFlow()
 
     private val _navIntent = MutableStateFlow<String?>(null)
     val navIntent: StateFlow<String?> = _navIntent.asStateFlow()
@@ -778,85 +767,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateSettings(transform: (AppSettings) -> AppSettings) {
         c.prefs.update(transform)
-    }
-
-    fun saveBotConnection(serverUrl: String, apiSecret: String) {
-        val normalized = BotPaymentClient.normalizeConfirmUrl(serverUrl)
-        if (normalized == null) {
-            failure("آدرس باید HTTPS و ریشهٔ سرور یا مسیر استاندارد confirm باشد")
-            return
-        }
-        val secret = apiSecret.trim()
-        if (secret.length < 32) {
-            failure("Secret کوتاه یا خالی است؛ Secret کامل سرور را وارد کنید")
-            return
-        }
-        testedBotConfig = null
-        _botConnectionResult.value = null
-        updateSettings { it.copy(botServerUrl = normalized, botApiSecret = secret, botPaymentEnabled = false) }
-        success("تنظیمات رمزگذاری‌شده ذخیره شد و ارسال خاموش شد؛ اتصال را آزمایش و سپس دوباره روشن کنید")
-    }
-
-    fun setBotPaymentEnabled(enabled: Boolean) {
-        val current = settings.value
-        val normalized = BotPaymentClient.normalizeConfirmUrl(current.botServerUrl)
-        val testedMatches = normalized != null && testedBotConfig == Pair(normalized, current.botApiSecret)
-        if (enabled && (normalized == null || current.botApiSecret.length < 32 || !testedMatches)) {
-            failure("ابتدا آدرس و Secret را ذخیره کنید، سپس همان تنظیمات را در تب آزمایش موفق بررسی کنید")
-            return
-        }
-        updateSettings { it.copy(botPaymentEnabled = enabled) }
-        success(if (enabled) "ارسال واریزهای واجدشرایط به ربات روشن شد" else "اتصال ربات خاموش شد")
-    }
-
-    fun clearBotConnectionResult() {
-        testedBotConfig = null
-        _botConnectionResult.value = null
-    }
-
-    fun clearBotOrderStatus() {
-        _botOrderStatus.value = null
-    }
-
-    fun lookupBotOrder(serverUrl: String, orderId: String) = viewModelScope.launch {
-        _busy.value = true
-        _busyText.value = "در حال خواندن وضعیت سفارش از سرور ربات…"
-        try {
-            val result = c.botPaymentClient.getOrderStatus(serverUrl, orderId)
-            _botOrderStatus.value = result
-            if (!result.ok || !result.found) failure(result.message)
-            else success("وضعیت سفارش از سرور خوانده شد")
-        } catch (e: Exception) {
-            val result = BotOrderStatusResult(false, message = e.message ?: "خواندن سفارش ناموفق بود")
-            _botOrderStatus.value = result
-            failure(result.message)
-        } finally {
-            _busy.value = false
-            _busyText.value = ""
-        }
-    }
-
-    fun testBotConnection(serverUrl: String, apiSecret: String) = viewModelScope.launch {
-        testedBotConfig = null
-        _busy.value = true
-        _busyText.value = "در حال آزمایش اتصال امن به سرور ربات…"
-        try {
-            val result = c.botPaymentClient.testConnection(serverUrl, apiSecret.trim())
-            _botConnectionResult.value = result
-            if (result.ok) {
-                BotPaymentClient.normalizeConfirmUrl(serverUrl)?.let { testedBotConfig = Pair(it, apiSecret.trim()) }
-                success("${result.message}${if (result.version.isNotBlank()) " (نسخه ${result.version})" else ""}")
-            } else {
-                failure(result.message)
-            }
-        } catch (e: Exception) {
-            val result = BotPaymentResult(false, "آزمایش اتصال ناموفق بود: ${e.message ?: "خطای ناشناخته"}", retryable = true)
-            _botConnectionResult.value = result
-            failure(result.message)
-        } finally {
-            _busy.value = false
-            _busyText.value = ""
-        }
     }
 
     fun setSmsMode(mode: String) = updateSettings { it.copy(smsMode = mode) }

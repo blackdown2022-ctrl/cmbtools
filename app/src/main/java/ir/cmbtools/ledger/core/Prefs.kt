@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
 
-/** تنظیمات برنامه؛ مقدارهای حساس مانند Secret ربات هنگام پشتیبان‌گیری حذف می‌شوند. */
+/** همهٔ تنظیمات برنامه؛ در فایل پشتیبان هم ذخیره می‌شود (نسخهٔ ۲). */
 @Serializable
 data class AppSettings(
     val persianDigits: Boolean = true,
@@ -25,8 +25,6 @@ data class AppSettings(
     /** پایهٔ ساخت لینک اشتراک اگر پنل در دسترس نباشد */
     val fallbackSubscriptionBase: String = "",
     val autoMatchBankSms: Boolean = true,
-    /** سرشمارهٔ مجاز پیامک بانکی؛ خالی یعنی هیچ پیامکی پذیرفته نشود. */
-    val bankSmsAllowedSender: String = "",
     /** مبالغ بالاتر از این مقدار بدون تأیید دستی خودکار تطبیق نشوند (ریال) */
     val autoMatchMaxRial: Long = 20_000_000,
 
@@ -45,13 +43,7 @@ data class AppSettings(
     /** شمارهٔ کارت فروشگاه که در فاکتور درج می‌شود */
     val paymentCardNumber: String = "",
     /** قیمت هر گیگ برای بسته‌های بدون «بستهٔ قیمت‌دار» (ریال) — صفر = غیرفعال */
-    val pricePerGbRial: Long = 0,
-    /** تأیید واریزهای پیامکی از مبلغ یکتای سفارش‌های ربات فروش */
-    val botPaymentEnabled: Boolean = false,
-    /** مسیر confirm دقیق سرور salebot؛ مقدار در EncryptedSharedPreferences ذخیره می‌شود */
-    val botServerUrl: String = "",
-    /** Secret مشترک بین گوشی و سرور salebot */
-    val botApiSecret: String = ""
+    val pricePerGbRial: Long = 0
 ) {
     companion object {
         /**
@@ -121,21 +113,9 @@ object SmsGatewayProvider {
     }
 }
 
-data class BotPaymentAudit(
-    val atMillis: Long = 0L,
-    val state: String = "",
-    val bank: String = "",
-    val amountRial: Long = 0L,
-    val amountUnit: String = "",
-    val reference: String = "",
-    val orderId: String = "",
-    val message: String = "",
-    val httpStatus: Int = 0
-)
-
 /**
- * تنظیمات و گزارش آخرین وضعیت ربات در EncryptedSharedPreferences ذخیره می‌شوند.
- * برای شخصی‌سازی از Keystore استفاده می‌شود و کلیدها روی دستگاه رمز می‌مانند.
+ * تنظیمات در EncryptedSharedPreferences ذخیره می‌شود (کلید API پنل و درگاه پیامک).
+ * برای شخصی‌سازی: از Keystore استفاده می‌کند و کلیدها روی دستگاه رمز می‌مانند.
  */
 class Prefs(context: Context) {
 
@@ -151,38 +131,27 @@ class Prefs(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
 
+    // Remove stale secrets/audit keys written by the optional bot integration removed in this release.
+    init {
+        sp.edit()
+            .remove("botPaymentEnabled")
+            .remove("botServerUrl")
+            .remove("botApiSecret")
+            .remove("botAuditAtMillis")
+            .remove("botAuditState")
+            .remove("botAuditBank")
+            .remove("botAuditAmountRial")
+            .remove("botAuditAmountUnit")
+            .remove("botAuditReference")
+            .remove("botAuditOrderId")
+            .remove("botAuditMessage")
+            .remove("botAuditHttpStatus")
+            .remove("bankSmsAllowedSender")
+            .apply()
+    }
+
     private val _settings = MutableStateFlow(read())
     val settings: StateFlow<AppSettings> = _settings
-
-    private val _botAudit = MutableStateFlow(readBotAudit())
-    val botAudit: StateFlow<BotPaymentAudit> = _botAudit
-
-    private fun readBotAudit() = BotPaymentAudit(
-        atMillis = sp.getLong("botAuditAtMillis", 0L),
-        state = sp.getString("botAuditState", "") ?: "",
-        bank = sp.getString("botAuditBank", "") ?: "",
-        amountRial = sp.getLong("botAuditAmountRial", 0L),
-        amountUnit = sp.getString("botAuditAmountUnit", "") ?: "",
-        reference = sp.getString("botAuditReference", "") ?: "",
-        orderId = sp.getString("botAuditOrderId", "") ?: "",
-        message = sp.getString("botAuditMessage", "") ?: "",
-        httpStatus = sp.getInt("botAuditHttpStatus", 0)
-    )
-
-    fun recordBotAudit(audit: BotPaymentAudit) {
-        sp.edit()
-            .putLong("botAuditAtMillis", audit.atMillis)
-            .putString("botAuditState", audit.state)
-            .putString("botAuditBank", audit.bank)
-            .putLong("botAuditAmountRial", audit.amountRial)
-            .putString("botAuditAmountUnit", audit.amountUnit)
-            .putString("botAuditReference", audit.reference)
-            .putString("botAuditOrderId", audit.orderId)
-            .putString("botAuditMessage", audit.message)
-            .putInt("botAuditHttpStatus", audit.httpStatus)
-            .apply()
-        _botAudit.value = audit
-    }
 
     private fun read(): AppSettings {
         val defaults = AppSettings()
@@ -208,7 +177,6 @@ class Prefs(context: Context) {
                 },
             fallbackSubscriptionBase = sp.getString("fallbackSubscriptionBase", "") ?: "",
             autoMatchBankSms = sp.getBoolean("autoMatchBankSms", true),
-            bankSmsAllowedSender = sp.getString("bankSmsAllowedSender", "") ?: "",
             autoMatchMaxRial = sp.getLong("autoMatchMaxRial", defaults.autoMatchMaxRial),
             autoSyncEnabled = sp.getBoolean("autoSyncEnabled", true),
             // پیش‌تر فاصله فقط پیش‌فرض ۵ دقیقه‌ای بود و در UI قابل تغییر نبود؛
@@ -219,10 +187,7 @@ class Prefs(context: Context) {
             autoSmsOnInvoice = sp.getBoolean("autoSmsOnInvoice", true),
             autoCreateCustomerFromPanel = sp.getBoolean("autoCreateCustomerFromPanel", true),
             paymentCardNumber = sp.getString("paymentCardNumber", "") ?: "",
-            pricePerGbRial = sp.getLong("pricePerGbRial", 0),
-            botPaymentEnabled = sp.getBoolean("botPaymentEnabled", false),
-            botServerUrl = sp.getString("botServerUrl", "") ?: "",
-            botApiSecret = sp.getString("botApiSecret", "") ?: ""
+            pricePerGbRial = sp.getLong("pricePerGbRial", 0)
         )
     }
 
@@ -243,7 +208,6 @@ class Prefs(context: Context) {
             .putString("invoiceTemplate", next.invoiceTemplate)
             .putString("fallbackSubscriptionBase", next.fallbackSubscriptionBase)
             .putBoolean("autoMatchBankSms", next.autoMatchBankSms)
-            .putString("bankSmsAllowedSender", next.bankSmsAllowedSender)
             .putLong("autoMatchMaxRial", next.autoMatchMaxRial)
             .putBoolean("autoSyncEnabled", next.autoSyncEnabled)
             .putInt("autoSyncMinutes", next.autoSyncMinutes)
@@ -253,9 +217,6 @@ class Prefs(context: Context) {
             .putBoolean("autoCreateCustomerFromPanel", next.autoCreateCustomerFromPanel)
             .putString("paymentCardNumber", next.paymentCardNumber)
             .putLong("pricePerGbRial", next.pricePerGbRial)
-            .putBoolean("botPaymentEnabled", next.botPaymentEnabled)
-            .putString("botServerUrl", next.botServerUrl)
-            .putString("botApiSecret", next.botApiSecret)
             .apply()
         _settings.value = next
     }

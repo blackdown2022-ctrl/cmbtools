@@ -8,7 +8,6 @@ import ir.cmbtools.ledger.core.Money
 import ir.cmbtools.ledger.core.PanelSyncRules
 import ir.cmbtools.ledger.core.Phone
 import ir.cmbtools.ledger.sms.BankSmsParser
-import ir.cmbtools.ledger.sms.BankSmsSenderFilter
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.data.Customer
 import ir.cmbtools.ledger.data.Invoice
@@ -88,21 +87,6 @@ class JalaliTest {
 class BankSmsParserTest {
 
     @Test
-    fun parses_compact_post_bank_amount_date_and_balance_format() {
-        val parsed = BankSmsParser.parse(
-            "10001234",
-            "پست بانکواريز به کارت: 2972+1,009,9101405/08/417:35مانده: 4,920,082 ريال",
-            0
-        )
-        assertEquals("پست بانک", parsed.bank)
-        assertEquals(1_009_910L, parsed.amountRial)
-        assertEquals("RIAL", parsed.amountUnit)
-        assertEquals(4_920_082L, parsed.balanceRial)
-        assertEquals("2972", parsed.last4)
-        assertTrue(parsed.isCredit)
-    }
-
-    @Test
     fun detects_deposit_with_rial_unit() {
         val body = "بانک ملت\nواریز: ۱٬۲۰۰٬۰۰۰ ریال\nبه حساب ۱۲۳۴\nموجودی: ۳٬۴۰۰٬۰۰۰ ریال"
         val parsed = BankSmsParser.parse("bankmellat", body, 0)
@@ -113,47 +97,11 @@ class BankSmsParserTest {
     }
 
     @Test
-    fun assumes_toman_for_local_display_when_unit_missing_but_marks_it_uncertain() {
-        val body = "واریز ۵۰۰٬۰۰۰ به حساب شما کد پیگیری 12345678"
-        val parsed = BankSmsParser.parse("bankmellat", body, 0)
+    fun assumes_toman_when_unit_missing() {
+        val body = "واریز ۵۰۰٬۰۰۰ به حساب شما"
+        val parsed = BankSmsParser.parse("9999", body, 0)
         assertEquals(5_000_000L, parsed.amountRial)
-        assertEquals("ASSUMED_TOMAN", parsed.amountUnit)
         assertTrue(parsed.isCredit)
-        assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(parsed))
-    }
-
-    @Test
-    fun prefers_transaction_amount_over_a_balance_that_appears_first() {
-        val parsed = BankSmsParser.parse(
-            "bankmellat",
-            "موجودی: ۹٬۹۰۰٬۰۰۰ ریال\nواریز مبلغ: ۱٬۲۰۰٬۰۰۰ ریال\nکد پیگیری: 12345678",
-            0
-        )
-        assertEquals(1_200_000L, parsed.amountRial)
-        assertEquals("RIAL", parsed.amountUnit)
-    }
-
-    @Test
-    fun does_not_treat_balance_alone_as_transaction_amount() {
-        val parsed = BankSmsParser.parse(
-            "bankmellat",
-            "موجودی: ۹٬۹۰۰٬۰۰۰ ریال",
-            0
-        )
-        assertEquals(0L, parsed.amountRial)
-        assertEquals(9_900_000L, parsed.balanceRial)
-    }
-
-    @Test
-    fun converts_explicit_toman_without_guessing() {
-        val parsed = BankSmsParser.parse(
-            "bankmellat",
-            "واریز مبلغ ۱۲۳٬۴۵۶ تومان\nکد پیگیری: 12345678",
-            0
-        )
-        assertEquals(1_234_560L, parsed.amountRial)
-        assertEquals("TOMAN", parsed.amountUnit)
-        assertTrue(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(parsed))
     }
 
     @Test
@@ -169,55 +117,6 @@ class BankSmsParserTest {
         val parsed = BankSmsParser.parse("bankmelli", body, 0)
         assertTrue(parsed.isOtp)
         assertFalse(parsed.isCredit)
-    }
-
-    @Test
-    fun parses_alternate_bank_tracking_reference_labels() {
-        val parsed = BankSmsParser.parse(
-            "bankmellat",
-            "واریز: ۱۲۰۰۰۰ ریال\nشماره رهگیری: 87654321",
-            0
-        )
-        assertEquals("87654321", parsed.refNo)
-    }
-
-    @Test
-    fun bot_only_accepts_known_bank_credit_with_reference() {
-        val valid = BankSmsParser.parse(
-            "bankmellat",
-            "واریز: ۱۲۰۰۰۰ ریال\nکد پیگیری: 12345678",
-            0
-        )
-        assertTrue(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(valid))
-
-        val missingReference = BankSmsParser.parse("bankmellat", "واریز: ۱۲۰۰۰۰ ریال", 0)
-        val unknownBank = BankSmsParser.parse("999999", "واریز: ۱۲۰۰۰۰ ریال\nکد پیگیری: 12345678", 0)
-        val reversal = BankSmsParser.parse(
-            "bankmellat",
-            "واریز: ۱۲۰۰۰۰ ریال\nکد پیگیری: 12345678\nبرگشت وجه",
-            0
-        )
-        val unrepresentableAmount = BankSmsParser.parse(
-            "bankmellat",
-            "واریز: ۱۲۰۰۰۱ ریال\nکد پیگیری: 12345678",
-            0
-        )
-        assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(missingReference))
-        assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(unknownBank))
-        assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(reversal))
-        assertFalse(ir.cmbtools.ledger.sms.BotPaymentClient.isEligibleBankDeposit(unrepresentableAmount))
-    }
-}
-
-class BankSmsSenderFilterTest {
-    @Test
-    fun only_the_exact_configured_sender_is_allowed() {
-        assertTrue(BankSmsSenderFilter.allows("+98 21-1234", "98211234"))
-        assertTrue(BankSmsSenderFilter.allows("پست بانک", "پستبانک"))
-        assertTrue(BankSmsSenderFilter.allows("پست‌بانک", "پست بانک"))
-        assertFalse(BankSmsSenderFilter.allows("982112340", "98211234"))
-        assertFalse(BankSmsSenderFilter.allows("98211234", ""))
-        assertFalse(BankSmsSenderFilter.allows("", "98211234"))
     }
 }
 

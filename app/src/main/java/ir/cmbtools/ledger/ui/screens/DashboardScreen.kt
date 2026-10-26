@@ -57,12 +57,13 @@ fun DashboardScreen(vm: AppViewModel, nav: NavHostController) {
     val invoices by vm.invoices.collectAsStateWithLifecycle()
     val accounts by vm.expiringAccounts.collectAsStateWithLifecycle()
     val customers by vm.customers.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
 
     var pickCustomerForPayment by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         GradientHeader(
-            title = vm.settings.value.businessName,
+            title = settings.businessName,
             subtitle = Jalali.formatLong(java.time.LocalDate.now().toEpochDay()) + " • " + Jalali.weekdayName(Jalali.today()),
             action = {
                 IconButton(onClick = { nav.navigate("settings") }) {

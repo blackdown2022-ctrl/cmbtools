@@ -2,16 +2,17 @@ package ir.cmbtools.ledger.panel
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.time.LocalDate
 
 /**
- * DTOهای API v2 هیدی‌فای — مطابق نسخهٔ ۱۴ (tag v14.0.x) و سازگار با نسخه‌های اطراف.
+ * DTOهای پاسخ پنل هیدی‌فای — سازگار با نسخه‌های ۱۱ تا ۱۴.
  *
- * دو نکتهٔ مهم که باعث اشکال در نسخه‌های قبل شده بود:
- *  ۱) `POST /admin/users/` و `PATCH /admin/users/<uuid>/` در نسخهٔ ۱۴ پاسخ را داخل
- *     یک پوشش `{"user": {...}}` برمی‌گردانند، نه به‌صورت مسطح. پس پاسخ‌ها به‌صورت
- *     JsonElement خوانده و سپس با [PanelJson.parseUser] باز می‌شوند (هر دو شکل پذیرفته می‌شود).
- *  ۲) همهٔ فیلدها مقدار پیش‌فرض دارند تا یک فیلد ناشناخته/خالی کل فهرست کاربران را
- *     از کار نیندازد (خرابی کامل JSON = «همگام‌سازی انجام نشد»).
+ * تفاوت نسخه‌ها که اینجا پوشش داده شده:
+ *  • ۱۴ (صفحهٔ کاربران): فهرست `{"users": [...], ...meta}` با `link_domains`، `can_add`، `read_only`
+ *    و ردیف‌ها دارای `expire_date` و `remaining_days`.
+ *  • ۱۱ تا ۱۴ (مسیر کلاسیک `/admin/user/`): آرایهٔ خالص ردیف‌ها؛ **بدون** `expire_date`،
+ *    `remaining_days`، `status`، `link_domains` — این‌ها در اپ محاسبه می‌شوند.
+ *  • همهٔ فیلدها مقدار پیش‌فرض دارند تا یک فیلد ناشناخته کل پاسخ را خراب نکند.
  */
 
 @Serializable
@@ -38,7 +39,17 @@ data class AdminRefDto(
     @SerialName("parent_uuid") val parentUuid: String? = null
 )
 
-/** متادیتای فهرست کاربران. در نسخهٔ ۱۴ این فیلدها کنار `users` و در سطح بالا می‌آیند. */
+/** اطلاعات ادمینِ متصل (`GET /api/v2/admin/me/`) — در همهٔ نسخه‌های ۱۱ تا ۱۴ وجود دارد. */
+@Serializable
+data class AdminMeDto(
+    @SerialName("uuid") val uuid: String = "",
+    @SerialName("name") val name: String = "",
+    @SerialName("mode") val mode: String = "",
+    @SerialName("can_add_admin") val canAddAdmin: Boolean = false,
+    @SerialName("parent_admin_uuid") val parentAdminUuid: String? = null
+)
+
+/** متادیتای فهرست کاربران؛ فقط نسخهٔ ۱۴ (مسیر `/users/`) آن را می‌دهد. */
 @Serializable
 data class UsersMetaDto(
     @SerialName("me_uuid") val meUuid: String = "",
@@ -49,7 +60,7 @@ data class UsersMetaDto(
 )
 
 /**
- * ردیف کاربر پنل (`GET /admin/users/` در نسخهٔ ۱۴ یا `GET /admin/user/` در نسخه‌های قدیمی).
+ * ردیف کاربر؛ هم شکل نسخهٔ ۱۴ و هم شکل کلاسیک ۱۱–۱۴ را می‌خواند.
  */
 @Serializable
 data class PanelUserDto(
@@ -70,12 +81,50 @@ data class PanelUserDto(
     @SerialName("last_online") val lastOnline: String? = null,
     @SerialName("owner_uuid") val ownerUuid: String? = null,
     @SerialName("owner_name") val ownerName: String = "",
+    @SerialName("added_by_uuid") val addedByUuid: String? = null,
     @SerialName("telegram_id") val telegramId: Long? = null,
-    @SerialName("tags") val tags: List<Int> = emptyList()
+    @SerialName("tags") val tags: List<Int> = emptyList(),
+    @SerialName("is_active") val isActive: Boolean? = null
 ) {
     val usable: Boolean get() = uuid.isNotBlank()
+
+    /** تبدیل تاریخ ISO پنل به شمارهٔ روز (بدون وابستگی به کلاس‌های اندرویدی) */
+    internal fun isoToEpochDay(iso: String?): Long {
+        if (iso.isNullOrBlank()) return 0
+        return runCatching { LocalDate.parse(iso.take(10)).toEpochDay() }.getOrDefault(0)
+    }
+
+    /** نسخه‌های ۱۱–۱۳ `expire_date` ندارند؛ از تاریخ شروع + روزهای بسته محاسبه می‌شود. */
+    val expireEpochDay: Long
+        get() {
+            val direct = isoToEpochDay(expireDate)
+            if (direct > 0) return direct
+            val start = isoToEpochDay(startDate)
+            if (start > 0 && packageDays > 0) return start + packageDays
+            return 0
+        }
+
+    /** روزهای باقی‌مانده؛ اگر پنل نداده باشد از تاریخ انقضا حساب می‌شود. */
+    val remainingDaysOrComputed: Int
+        get() {
+            if (remainingDays != 0) return remainingDays
+            val exp = expireEpochDay
+            if (exp <= 0) return 0
+            return (exp - LocalDate.now().toEpochDay()).toInt()
+        }
+
+    /** وضعیت یکدست برای نسخه‌هایی که فیلد `status` ندارند. */
+    val statusOrComputed: String
+        get() = when {
+            status.isNotBlank() -> status
+            !enable -> "disabled"
+            remainingDaysOrComputed < 0 -> "expired"
+            usageLimitGb > 0 && currentUsageGb >= usageLimitGb -> "no_data"
+            else -> "active"
+        }
 }
 
+/** شکل صفحهٔ کاربران نسخهٔ ۱۴ (برای وقتی پاسخ داخل `{"users": ...}` است) */
 @Serializable
 data class UsersPageDto(
     @SerialName("users") val users: List<PanelUserDto> = emptyList(),
@@ -83,49 +132,40 @@ data class UsersPageDto(
 )
 
 /**
- * بدنهٔ ساخت کاربر. با `explicitNulls = false` در Json کلاینت سریال می‌شود،
- * پس فیلدهای null اصلاً فرستاده نمی‌شوند (پنل آن‌ها را به‌عنوان «مقدار خالی» تفسیر نکند).
+ * سبک API پنل — بین نسخه‌های ۱۱ تا ۱۴ خودکار انتخاب می‌شود.
  */
-@Serializable
-data class CreateUserRequest(
-    @SerialName("name") val name: String,
-    @SerialName("usage_limit_GB") val usageLimitGb: Double,
-    @SerialName("package_days") val packageDays: Int,
-    @SerialName("comment") val comment: String? = null,
-    @SerialName("enable") val enable: Boolean? = null,
-    @SerialName("mode") val mode: String? = null,
-    @SerialName("uuid") val uuid: String? = null
-)
+enum class ApiFlavor(val id: String, val label: String) {
+    /** نسخهٔ ۱۴: `/api/v2/admin/users/` — کامل‌ترین (لینک‌دامنه‌ها، دسترسی ساخت، بقیه) */
+    PAGE("PAGE", "نسخهٔ ۱۴ — صفحهٔ کاربران (/users/)"),
 
-/**
- * بدنهٔ ویرایش (`PATCH`).
- *
- * ⚠ نکتهٔ نسخهٔ ۱۴: پنل هیچ‌کدام از `current_usage_GB` و `start_date` را در PATCH قبول
- * نمی‌کند؛ برای تمدید باید پرچم‌های `reset_usage` و `reset_days` فرستاده شوند.
- * برای سازگاری با نسخه‌های قدیمی هر چهار مورد فرستاده می‌شوند (پنل موارد ناشناخته را
- * نادیده می‌گیرد) و فیلدهای null به‌طور کامل حذف می‌شوند تا پنل نام کاربر را خالی نکند.
- */
-@Serializable
-data class PatchUserRequest(
-    @SerialName("name") val name: String? = null,
-    @SerialName("usage_limit_GB") val usageLimitGb: Double? = null,
-    @SerialName("package_days") val packageDays: Int? = null,
-    @SerialName("current_usage_GB") val currentUsageGb: Double? = null,
-    @SerialName("enable") val enable: Boolean? = null,
-    @SerialName("comment") val comment: String? = null,
-    @SerialName("reset_usage") val resetUsage: Boolean? = null,
-    @SerialName("reset_days") val resetDays: Boolean? = null
-)
+    /** نسخه‌های ۱۱ تا ۱۴: `/api/v2/admin/user/` — مسیر کلاسیک */
+    LEGACY("LEGACY", "نسخه‌های ۱۱ تا ۱۴ — مسیر کلاسیک (/user/)"),
 
-@Serializable
-data class BulkRequest(
-    @SerialName("action") val action: String,
-    @SerialName("uuids") val uuids: List<String>,
-    @SerialName("gb") val gb: Double? = null,
-    @SerialName("days") val days: Int? = null
-)
+    /** نسخه‌های ۱۰ تا ۱۴: `/api/v1/user/` — فقط ادمین کل؛ آخرین راه‌حل */
+    V1("V1", "نسخهٔ ۱۰ تا ۱۴ — API نسخهٔ ۱ (/api/v1/user/)");
 
-@Serializable
-data class BulkResponse(
-    @SerialName("count") val count: Int = 0
-)
+    companion object {
+        fun from(id: String?): ApiFlavor? = entries.firstOrNull { it.id == id }
+    }
+}
+
+/** مسیرهای همهٔ نسخه‌ها در یک جا؛ برای عیب‌یابی و انتخاب خودکار. */
+object PanelRoutes {
+    const val ME = "/api/v2/admin/me/"
+    const val INFO = "/api/v2/panel/info/"
+    const val SERVER_STATUS = "/api/v2/admin/server_status/"
+    const val ALL_CONFIGS = "/api/v2/admin/all-configs/"
+
+    // نسخهٔ ۱۴ — صفحهٔ کاربران
+    const val USERS_PAGE = "/api/v2/admin/users/"
+    const val BULK_PAGE = "/api/v2/admin/users/bulk/"
+    fun userPage(uuid: String) = "/api/v2/admin/users/$uuid/"
+
+    // نسخه‌های ۱۱ تا ۱۴ — مسیر کلاسیک
+    const val USERS_LEGACY = "/api/v2/admin/user/"
+    fun userLegacy(uuid: String) = "/api/v2/admin/user/$uuid/"
+
+    // نسخه‌های ۱۰ تا ۱۴ — API نسخهٔ ۱
+    const val V1_USERS = "/api/v1/user/"
+    fun v1Delete(uuid: String) = "/api/v1/user/?uuid=$uuid"
+}

@@ -5,29 +5,32 @@ import ir.cmbtools.ledger.data.PanelConfig
 import ir.cmbtools.ledger.data.PanelDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.ResponseBody
-import retrofit2.HttpException
-import retrofit2.Retrofit
-import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.put
 import java.time.LocalDate
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 
 class PanelException(message: String, val kind: Kind = Kind.GENERIC) : Exception(message) {
-    enum class Kind { GENERIC, NOT_CONFIGURED, AUTH, NETWORK, NOT_FOUND, SERVER, LIMIT }
+    enum class Kind { GENERIC, NOT_CONFIGURED, AUTH, NETWORK, NOT_FOUND, SERVER, LIMIT, PATH }
 }
 
 data class PanelConnection(
     val ok: Boolean,
     val version: String = "",
     val adminUuid: String = "",
+    val adminName: String = "",
     val canAddUsers: Boolean = true,
     val readOnly: Boolean = false,
     val linkBase: String = "",
     val usersCount: Int = 0,
     val endpoint: String = "",
+    val flavor: String = "",
     val message: String = ""
 )
 
@@ -37,26 +40,24 @@ data class PanelCheck(val title: String, val ok: Boolean, val detail: String)
 /**
  * تجزیهٔ آدرس پنل.
  *
- * کاربر (به‌خصوص اگر تازه‌کار باشد) هر کدام از این‌ها را در فیلد «آدرس پنل» می‌چسباند
- * و همه باید یک نتیجه بدهند:
+ * کاربر ممکن است هر کدام از این‌ها را در فیلد «آدرس پنل» بچسباند و همه باید یک نتیجه بدهند:
  *
  *   panel.example.com
- *   https://panel.example.com/
- *   https://panel.example.com/AbCdEf12/            ← آدرس پنل در مرورگر
- *   https://panel.example.com/AbCdEf12/admin/      ← گاهی با /admin
- *   https://panel.example.com/AbCdEf12/api/v2/…    ← کل لینک API
+ *   https://panel.example.com/AbCdEf12/
+ *   https://panel.example.com/AbCdEf12/admin/
+ *   https://panel.example.com/AbCdEf12/admin/#/users
+ *   https://panel.example.com/AbCdEf12/api/v2/admin/users/
+ *   https://panel.example.com/AbCdEf12/8f14e45f-…/     ← لینک اشتراک یک کاربر
  *
- * نتیجه: دامنه (با پورت)، «مسیر پروکسی ادمین» و http/https.
+ * **نکتهٔ مهم (همهٔ نسخه‌های ۱۱ تا ۱۴):** خودِ هیدی‌فای با تابع
+ * `get_proxy_path_from_url` فقط **تکهٔ اول** مسیر را به‌عنوان proxy_path می‌شناسد؛
+ * پس هر چیز اضافه‌ای بعد از آن باید حذف شود، وگرنه آدرس به مسیر ناموجود می‌رسد و ۴۰۴ می‌گیریم.
  */
 object PanelUrl {
 
     data class Parts(val host: String, val proxyPath: String, val useHttps: Boolean) {
         val scheme: String get() = if (useHttps) "https" else "http"
-
-        /** https://panel.example.com/AbCdEf    (بدون اسلش آخر) */
         val panelUrl: String get() = "$scheme://$host" + if (proxyPath.isBlank()) "" else "/$proxyPath"
-
-        /** پایهٔ درخواست‌های Retrofit: https://panel.example.com/ */
         val baseUrl: String get() = "$scheme://$host/"
     }
 
@@ -81,109 +82,174 @@ object PanelUrl {
     }
 
     /**
-     * حذف پسوندهای API و `/admin` و جدا کردن «مسیر پروکسی ادمین».
+     * استخراج «مسیر پروکسی ادمین» — همیشه **فقط تکهٔ اول** مسیر.
      * مثال‌ها:
-     *   `AbCdEf/api/v2/admin/users/` → `AbCdEf`
-     *   `/AbCdEf/admin/`             → `AbCdEf`
-     *   `api/v2/admin`               → `` (مسیر واقعی نیست)
+     *   `AbCdEf/api/v2/admin/users/`      → `AbCdEf`
+     *   `AbCdEf/admin/#/users`            → `AbCdEf`
+     *   `AbCdEf/8f14e45f-…/`              → `AbCdEf`
+     *   `api/v2/admin`                    → `` (این مسیر واقعی نیست)
      */
     fun cleanPath(raw: String): String {
-        // ?query و #fragment هرگز بخشی از مسیر پروکسی نیستند
+        // حذف ?query و #fragment
         var p = raw.trim().substringBefore('#').substringBefore('?').trim('/')
+        // اگر کاربر کل لینک API را چسبانده باشد
         listOf("/api/v2/admin", "/api/v2/panel", "/api/v2", "/api").forEach { marker ->
             val at = p.indexOf(marker)
             if (at >= 0) p = p.substring(0, at)
         }
-        // آدرس پنل در مرورگر معمولاً به /admin/ ختم می‌شود (یا /admin/#/users)
+        // آدرس پنل در مرورگر معمولاً به /admin/ ختم می‌شود
         val adminAt = p.indexOf("/admin")
         if (adminAt >= 0) p = p.substring(0, adminAt)
-        if (p == "admin") p = ""
-        if (p == "api" || p.startsWith("api/")) p = ""
-        return p.trim('/')
+        p = p.trim('/')
+        if (p.isEmpty()) return ""
+        // هیدی‌فای فقط تکهٔ اول را می‌خواند؛ بقیهٔ تکه‌ها آدرس را به ۴۰۴ می‌برند
+        val first = p.substringBefore('/')
+        if (first == "api" || first == "admin") return ""
+        return first
     }
 
     /** آدرس کامل پنل برای نمایش/ویرایش در تنظیمات */
     fun display(host: String, proxyPath: String, useHttps: Boolean): String =
         normalize(host, proxyPath, useHttps).panelUrl
 
-    /** پایهٔ لینک را یکدست می‌کند: با https شروع شود و اسلش آخر داشته باشد */
+    /** پایهٔ لینک اشتراک را یکدست می‌کند: http(s) + اسلش آخر */
     fun normalizeLinkBase(raw: String): String {
         var base = raw.trim()
         if (base.isBlank()) return ""
         if (!base.startsWith("http://", true) && !base.startsWith("https://", true)) base = "https://$base"
         if (!base.endsWith("/")) base += "/"
+        // مسیرهای اضافی بعد از شناسهٔ دامنه، جزو پایهٔ لینک نیستند
         return base
+    }
+
+    /** آیا این رشته شبیه UUID است؟ (برای تشخیص لینک اشتراک چسبانده‌شده) */
+    fun looksLikeUuid(value: String): Boolean =
+        Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+            .matches(value.trim())
+
+    /** ساخت لینک اشتراک مشتری: پایه + شناسهٔ کاربر + اسلش */
+    fun subscriptionLink(base: String, uuid: String): String {
+        val b = normalizeLinkBase(base)
+        if (b.isBlank() || uuid.isBlank()) return ""
+        return b + uuid + "/"
     }
 }
 
-/**
- * همهٔ آدرس‌هایی که اپ از پنل استفاده می‌کند، به‌صورت خوانا.
- * در تنظیمات نشان داده می‌شود تا معلوم باشد «آدرس ساخت کاربر» دقیقاً چیست.
- */
+/** همهٔ آدرس‌هایی که اپ از پنل استفاده می‌کند، به‌صورت خوانا (برای نمایش در تنظیمات). */
 data class PanelEndpoints(
     val panelUrl: String = "",
     val apiBase: String = "",
     val usersListUrl: String = "",
     val createUserUrl: String = "",
     val userUrl: String = "",
-    val bulkUrl: String = "",
     val subscriptionBase: String = "",
-    val subscriptionExample: String = ""
+    val subscriptionExample: String = "",
+    val flavor: String = "",
+    val version: String = ""
 )
 
 /**
- * کلاینت پنل هیدی‌فای (API v2 — نسخهٔ ۱۴).
+ * کلاینت پنل هیدی‌فای، سازگار با **نسخه‌های ۱۱ تا ۱۴**.
  *
- * اصول:
- *  • همهٔ فراخوانی‌ها روی IO و با تایم‌اوت بزرگ (پنل پس از هر نوشتن، `quick_apply_users`
- *    را اجرا می‌کند و می‌تواند ده‌ها ثانیه طول بکشد).
- *  • پاسخ‌ها به‌صورت متن خام خوانده می‌شوند: شکل‌های `{...}`، `{"user":{...}}` و آرایه
- *    همه پشتیبانی می‌شوند و متن خطای خود پنل هم در دسترس است.
- *  • اگر پنل به‌جای JSON صفحهٔ ورود (HTML) برگرداند، خطای صریح «کلید/مسیر اشتباه» داده
- *    می‌شود (قبلاً این حالت «۰ کاربر» نمایش داده می‌شد و تصور می‌شد ساخت کار نمی‌کند).
- *  • اگر ساخت/تمدید با timeout همراه بود، وجود کاربر در پنل بررسی می‌شود؛ چون پنل ممکن است
- *    کاربر را ساخته باشد ولی پاسخ دیر برسد.
+ * ایدهٔ اصلی: نسخه‌ها مسیرهای متفاوتی دارند و اپ نباید به یکی قفل شود.
+ *  ۱) `GET /api/v2/admin/me/` → آیا مسیر ادمین و کلید درست است؟ (۱۱–۱۴)
+ *  ۲) فهرست کاربران به سه شکل:
+ *       • `/api/v2/admin/users/`  ← نسخهٔ ۱۴ (کامل‌ترین، با لینک‌دامنه‌ها)
+ *       • `/api/v2/admin/user/`   ← نسخه‌های ۱۱ تا ۱۴ (کلاسیک)
+ *       • `/api/v1/user/`         ← نسخه‌های ۱۰ تا ۱۴ (قدیمی، فقط ادمین کل)
+ *  ۳) ساخت/ویرایش/حذف با همان سبکی که جواب داد.
+ *
+ * کدهای وضعیت هیدی‌فای معنی دقیق دارند و همین‌ها را به پیام فارسی تبدیل می‌کنیم:
+ *  • **۴۰۰ invalid request** → مسیر پروکسی، «مسیر ادمین» نیست (معمولاً مسیر اشتراک یا اشتباه)
+ *  • **۴۰۳ Unathorized**     → مسیر درست است، ولی کلید API معتبر نیست
+ *  • **۴۰۴**                 → این سرویس در این نسخه وجود ندارد، یا آدرس تکهٔ اضافه دارد
+ *  • **HTML**                → به صفحهٔ ورود ریدایرکت شده‌ایم (کلید/مسیر غلط)
  */
 class PanelClient(
     private val panelDao: PanelDao,
-    private val prefs: Prefs
+    private val prefs: Prefs,
+    private val http: PanelHttp = PanelHttp()
 ) {
-    private val http = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(120, TimeUnit.SECONDS)
-        .callTimeout(180, TimeUnit.SECONDS)
-        // تلاش مجدد فقط برای خطاهای اتصال، نه تکرار کورکورانهٔ POST
-        .retryOnConnectionFailure(true)
-        .build()
-
-    /** آخرین مسیری که برای فهرست کاربران جواب داد (برای نمایش در عیب‌یابی) */
+    /** آخرین مسیری که برای فهرست کاربران جواب داد */
     @Volatile
     var workingEndpoint: String = ""
         private set
 
-    /** متن آخرین خطای خام پنل (برای گزارش قابل‌کپی) */
+    /** متن آخرین پاسخ خام مشکل‌دار (برای گزارش قابل‌کپی) */
     @Volatile
     var lastRawError: String = ""
         private set
 
+    /** سبک API که جواب داد */
     @Volatile
-    private var preferPageApi: Boolean = true
+    var flavor: ApiFlavor? = null
+        private set
 
-    // ─────────────────────────────────────────────────────── آدرس‌ها
+    @Volatile
+    var panelVersion: String = ""
+        private set
 
-    private fun service(config: PanelConfig): HiddifyApi {
-        val parts = PanelUrl.normalize(config.host, config.adminProxyPath, config.useHttps)
-        return Retrofit.Builder()
-            .baseUrl(parts.baseUrl)
-            .client(http)
-            .addConverterFactory(PanelJson.lenient.asConverterFactory("application/json".toMediaType()))
-            .build()
-            .create(HiddifyApi::class.java)
+    @Volatile
+    var adminMe: AdminMeDto? = null
+        private set
+
+    /** آدرس‌ها و کدهای وضعیت آخرین اسکن (برای نمایش) */
+    @Volatile
+    var lastProbes: List<PanelCheck> = emptyList()
+        private set
+
+    // نتیجهٔ تشخیص مسیر/نسخه، کوتاه‌مدت نگه داشته می‌شود تا هر عملیات ۴ درخواست اضافه نزند
+    @Volatile
+    private var cache: Resolved? = null
+
+    @Volatile
+    private var cacheAt: Long = 0
+
+    /** بعد از تغییر تنظیمات، تشخیص باید از نو انجام شود */
+    fun invalidate() {
+        cache = null
+        cacheAt = 0
+        flavor = null
+        workingEndpoint = ""
     }
 
-    private fun proxyPath(config: PanelConfig): String =
-        PanelUrl.normalize(config.host, config.adminProxyPath, config.useHttps).proxyPath
+    // ─────────────────────────────────────────────────────── پیکربندی
+
+    suspend fun currentConfig(): PanelConfig = panelDao.config() ?: PanelConfig()
+
+    suspend fun endpointsNow(): PanelEndpoints = endpoints(currentConfig())
+
+    fun endpoints(config: PanelConfig): PanelEndpoints {
+        val t = PanelTarget.of(config)
+        val api = if (t.proxyPath.isBlank()) "" else "${t.panelUrl}/api/v2"
+        val sub = linkBaseOf(config)
+        val f = ApiFlavor.from(config.apiFlavor)
+        val createUrl = when (f) {
+            ApiFlavor.PAGE -> if (api.isBlank()) "" else t.panelUrl + PanelRoutes.USERS_PAGE
+            ApiFlavor.V1 -> if (api.isBlank()) "" else t.panelUrl + PanelRoutes.V1_USERS
+            else -> if (api.isBlank()) "" else t.panelUrl + PanelRoutes.USERS_LEGACY
+        }
+        val userUrl = when (f) {
+            ApiFlavor.PAGE -> if (api.isBlank()) "" else t.panelUrl + "/api/v2/admin/users/<uuid>/"
+            ApiFlavor.V1 -> if (api.isBlank()) "" else t.panelUrl + "/api/v1/user/?uuid=<uuid>"
+            else -> if (api.isBlank()) "" else t.panelUrl + "/api/v2/admin/user/<uuid>/"
+        }
+        return PanelEndpoints(
+            panelUrl = t.panelUrl,
+            apiBase = if (api.isBlank()) "" else "$api/",
+            usersListUrl = when (f) {
+                ApiFlavor.PAGE -> t.panelUrl + PanelRoutes.USERS_PAGE
+                ApiFlavor.V1 -> t.panelUrl + PanelRoutes.V1_USERS
+                else -> t.panelUrl + PanelRoutes.USERS_LEGACY
+            }.takeIf { !api.isBlank() } ?: "",
+            createUserUrl = createUrl,
+            userUrl = userUrl,
+            subscriptionBase = sub,
+            subscriptionExample = if (sub.isBlank()) "" else sub + "00000000-0000-0000-0000-000000000000/",
+            flavor = f?.label ?: "خودکار (اولین اتصال تشخیص می‌دهد)",
+            version = config.panelVersion
+        )
+    }
 
     /** پایهٔ لینک اشتراک: مقدار صریح تنظیمات، وگرنه مقدار کشف‌شده/قدیمی */
     private fun linkBaseOf(config: PanelConfig): String {
@@ -192,34 +258,14 @@ class PanelClient(
         return PanelUrl.normalizeLinkBase(prefs.current.fallbackSubscriptionBase)
     }
 
-    /** آدرس‌های نهایی برای نمایش در تنظیمات (شامل «آدرس ساخت کاربر» و لینک اشتراک) */
-    fun endpoints(config: PanelConfig): PanelEndpoints {
-        val parts = PanelUrl.normalize(config.host, config.adminProxyPath, config.useHttps)
-        val api = "${parts.panelUrl}/api/v2"
-        val sub = linkBaseOf(config)
-        return PanelEndpoints(
-            panelUrl = parts.panelUrl,
-            apiBase = "$api/",
-            usersListUrl = "$api/admin/users/",
-            createUserUrl = "$api/admin/users/",
-            userUrl = "$api/admin/users/<uuid>/",
-            bulkUrl = "$api/admin/users/bulk/",
-            subscriptionBase = sub,
-            subscriptionExample = if (sub.isBlank()) "" else sub + "00000000-0000-0000-0000-000000000000/"
-        )
-    }
-
-    suspend fun currentConfig(): PanelConfig = panelDao.config() ?: PanelConfig()
-
-    suspend fun endpointsNow(): PanelEndpoints = endpoints(currentConfig())
-
-    private suspend fun config(): PanelConfig {
+    private suspend fun configOrThrow(): PanelConfig {
         val c = panelDao.config() ?: PanelConfig()
         if (c.host.isBlank() || c.apiKey.isBlank()) throw PanelException(
             "اتصال پنل تنظیم نشده است: «آدرس پنل» (همان آدرس مرورگر) و «کلید API» را وارد کنید.",
             PanelException.Kind.NOT_CONFIGURED
         )
-        if (proxyPath(c).isBlank()) throw PanelException(
+        val t = PanelTarget.of(c)
+        if (t.proxyPath.isBlank()) throw PanelException(
             "مسیر پنل از آدرس استخراج نشد. آدرس را کامل بچسبانید؛ مثل https://panel.example.com/AbCdEf12",
             PanelException.Kind.NOT_CONFIGURED
         )
@@ -228,16 +274,78 @@ class PanelClient(
 
     // ─────────────────────────────────────────────────────── خطاها
 
-    private fun httpDetail(e: HttpException): String {
-        val body = runCatching { e.response()?.errorBody()?.string() }.getOrNull()
-        val url = runCatching { e.response()?.raw()?.request?.url?.toString() }.getOrNull().orEmpty()
-        val text = PanelJson.errorText(body).ifBlank { body?.take(200)?.trim().orEmpty() }
+    private fun saveRaw(url: String, r: HttpResult) {
         lastRawError = buildString {
-            append(url).append('\n')
-            append("HTTP ").append(e.code()).append('\n')
-            append(text)
+            append(r.code).append(" — ").append(url).append('\n')
+            if (r.body.isNotBlank()) append(r.body.trim().take(600))
         }
-        return text.ifBlank { e.message().orEmpty() }
+    }
+
+    /**
+     * تبدیل یک پاسخ ناموفق به استثنای فارسی با «علت دقیق».
+     * این تابع قلب رفع ابهام «۴۰۴» است: هر کد وضعیت، معنی متفاوتی دارد.
+     */
+    private fun failure(r: HttpResult, action: String): PanelException {
+        saveRaw(r.url, r)
+        return when {
+            r.isInvalidProxyPath -> PanelException(
+                "پنل پاسخ داد «invalid request»: مسیری که درخواست به آن رفته، «مسیر پروکسی ادمین» نیست.\n" +
+                    "علت رایج: در فیلد «آدرس پنل» آدرسِ پنل کاربر یا لینک اشتراک گذاشته شده است.\n" +
+                    "راه‌حل: در مرورگر با حساب ادمین وارد پنل شوید و آدرس نوار آدرس را کامل کپی کنید " +
+                    "(مثل https://panel.example.com/AbCdEf12/admin/).",
+                PanelException.Kind.PATH
+            )
+            r.isUnauthorized -> PanelException(
+                "مسیر ادمین درست است، ولی «کلید API» پذیرفته نشد (${r.code}).\n" +
+                    "کلید باید UUID خودِ ادمین باشد (پنل → ادمین‌ها → کلید API)." +
+                    (r.panelMessage.takeIf { it.isNotBlank() }?.let { " پیام پنل: $it" } ?: ""),
+                PanelException.Kind.AUTH
+            )
+            r.isHtml -> PanelException(
+                "پنل به‌جای JSON، صفحهٔ ورود/HTML برگرداند. یعنی کلید API یا مسیر ادمین درست نیست.",
+                PanelException.Kind.AUTH
+            )
+            r.code == 404 -> PanelException(
+                "آدرس «$action» در پنل پیدا نشد (۴۰۴).\n" +
+                    "یعنی یا نسخهٔ پنل این سرویس را ندارد، یا در آدرس، مسیر اضافه وجود دارد.\n" +
+                    "آدرس استفاده‌شده: ${r.url}",
+                PanelException.Kind.NOT_FOUND
+            )
+            r.code == 405 -> PanelException(
+                "نسخهٔ پنل شما این عملیات را در این مسیر پشتیبانی نمی‌کند (۴۰۵) — آدرس: ${r.url}",
+                PanelException.Kind.SERVER
+            )
+            r.code == 400 -> PanelException(
+                "پنل درخواست را رد کرد: " + r.panelMessage.ifBlank { r.short() },
+                PanelException.Kind.SERVER
+            )
+            r.code in 500..599 -> PanelException(
+                "خطای سرور پنل (${r.code}): " + r.panelMessage.ifBlank { r.short() },
+                PanelException.Kind.SERVER
+            )
+            else -> PanelException(
+                "خطای پنل (${r.code}): " + r.panelMessage.ifBlank { r.short() },
+                PanelException.Kind.SERVER
+            )
+        }
+    }
+
+    private fun panelExceptionFor(e: Throwable): PanelException = when (e) {
+        is PanelException -> e
+        is java.net.UnknownHostException -> PanelException(
+            "دامنهٔ پنل پیدا نشد (اتصال اینترنت یا دامنه را بررسی کنید)",
+            PanelException.Kind.NETWORK
+        )
+        is java.net.SocketTimeoutException -> PanelException(
+            "پاسخ پنل دیر شد (timeout). پنل پس از هر تغییر، کانفیگ‌ها را دوباره می‌سازد؛ چند لحظه بعد دوباره تلاش کنید.",
+            PanelException.Kind.NETWORK
+        )
+        is javax.net.ssl.SSLException -> PanelException(
+            "خطای گواهی SSL پنل: ${e.message}",
+            PanelException.Kind.NETWORK
+        )
+        is java.io.IOException -> PanelException("ارتباط با پنل برقرار نشد: ${e.message}", PanelException.Kind.NETWORK)
+        else -> PanelException(e.message ?: e::class.java.simpleName, PanelException.Kind.GENERIC)
     }
 
     private suspend fun <T> guard(block: suspend () -> T): T = withContext(Dispatchers.IO) {
@@ -245,182 +353,295 @@ class PanelClient(
             block()
         } catch (e: PanelException) {
             throw e
-        } catch (e: PanelShapeException) {
-            throw PanelException(e.message ?: "پاسخ پنل قابل خواندن نیست", PanelException.Kind.SERVER)
-        } catch (e: kotlinx.serialization.SerializationException) {
-            throw PanelException(
-                "پاسخ پنل قابل خواندن نیست. احتمالاً مسیر پروکسی ادمین یا کلید API اشتباه است.",
-                PanelException.Kind.AUTH
-            )
-        } catch (e: HttpException) {
-            val detail = httpDetail(e)
-            throw when (e.code()) {
-                400 -> PanelException("پنل درخواست را رد کرد: $detail", PanelException.Kind.SERVER)
-                401, 403 -> PanelException("دسترسی رد شد (کلید API یا سطح دسترسی ادمین): $detail", PanelException.Kind.AUTH)
-                404 -> PanelException("مسیر پیدا نشد (مسیر پروکسی ادمین یا نسخهٔ پنل): $detail", PanelException.Kind.NOT_FOUND)
-                405 -> PanelException("این عملیات در نسخهٔ پنل شما پشتیبانی نمی‌شود: $detail", PanelException.Kind.SERVER)
-                409 -> PanelException("تعارض در پنل: $detail", PanelException.Kind.SERVER)
-                422 -> PanelException("پنل درخواست را رد کرد: $detail", PanelException.Kind.SERVER)
-                in 500..599 -> PanelException("خطای سرور پنل (${e.code()}): $detail", PanelException.Kind.SERVER)
-                else -> PanelException("خطای پنل: ${e.code()} — $detail", PanelException.Kind.SERVER)
-            }
-        } catch (e: java.net.UnknownHostException) {
-            throw PanelException("دامنهٔ پنل پیدا نشد (اتصال اینترنت یا دامنه را بررسی کنید)", PanelException.Kind.NETWORK)
-        } catch (e: java.net.SocketTimeoutException) {
-            throw PanelException(
-                "پاسخ پنل دیر شد (timeout). پنل پس از هر تغییر، کانفیگ‌ها را دوباره می‌سازد؛ چند لحظه بعد دوباره تلاش کنید.",
-                PanelException.Kind.NETWORK
-            )
-        } catch (e: javax.net.ssl.SSLException) {
-            throw PanelException("خطای امنیتی گواهی SSL پنل: ${e.message}", PanelException.Kind.NETWORK)
-        } catch (e: java.io.IOException) {
-            throw PanelException("ارتباط با پنل برقرار نشد: ${e.message}", PanelException.Kind.NETWORK)
+        } catch (e: Exception) {
+            throw panelExceptionFor(e)
         }
     }
+
+    // ─────────────────────────────────────────────────────── JSON
+
+    private fun element(text: String): JsonElement? =
+        runCatching { PanelJson.lenient.decodeFromString(JsonElement.serializer(), text) }.getOrNull()
+
+    private fun parseUserBody(text: String): PanelUserDto? {
+        val el = element(text) ?: return null
+        return runCatching { PanelJson.parseUser(el) }.getOrNull()
+    }
+
+    private fun objOf(vararg pairs: Pair<String, JsonElement?>): JsonObject = buildJsonObject {
+        pairs.forEach { (k, v) ->
+            when (v) {
+                null -> put(k, JsonNull)
+                else -> put(k, v)
+            }
+        }
+    }
+
+    private fun str(v: String): JsonElement = JsonPrimitive(v)
+    private fun num(v: Double): JsonElement = JsonPrimitive(v)
+    private fun int(v: Int): JsonElement = JsonPrimitive(v)
+    private fun bool(v: Boolean): JsonElement = JsonPrimitive(v)
+
+    // ─────────────────────────────────────────────────────── تشخیص نسخه
 
     /**
-     * متن خام پاسخ؛ اگر HTML صفحهٔ ورود بود، خطای روشن می‌دهد.
-     * (هیدی‌فای برای کلید نامعتبر به‌جای 401، ریدایرکت به صفحهٔ ورود می‌دهد.)
+     * کاوش پنل: اول وضعیت مسیر و کلید (`/me/`)، بعد پیدا کردن مسیری که فهرست کاربران را می‌دهد.
+     * نتیجه در `lastProbes` برای نمایش ذخیره می‌شود.
      */
-    private fun jsonText(body: ResponseBody, what: String): String {
-        val text = body.use { it.string() }
-        val head = text.trimStart().take(80).lowercase()
-        if (head.startsWith("<!doctype") || head.startsWith("<html") || head.startsWith("<")) {
-            throw PanelException(
-                "پنل برای «$what» به‌جای JSON، صفحهٔ ورود (HTML) برگرداند؛ یعنی کلید API یا مسیر پروکسی ادمین درست نیست.",
-                PanelException.Kind.AUTH
+    suspend fun resolve(force: Boolean = false): Resolved = guard {
+        val c = configOrThrow()
+        if (!force) {
+            val hit = cache
+            if (hit != null &&
+                System.currentTimeMillis() - cacheAt < 60_000 &&
+                hit.config.host == c.host &&
+                hit.config.adminProxyPath == c.adminProxyPath &&
+                hit.config.apiKey == c.apiKey
+            ) {
+                flavor = hit.flavor
+                return@guard hit
+            }
+        }
+        var config = c
+        var target = PanelTarget.of(config)
+        val probes = mutableListOf<PanelCheck>()
+
+        // ۱) مسیر و کلید: /me/ در نسخه‌های ۱۱ تا ۱۴ وجود دارد
+        //
+        // اگر پنل با http بالا آمده باشد (مثلاً 192.168.1.10:8000) و ما با https برویم،
+        // خطای اتصال/SSL می‌گیریم نه ۴۰۴. اینجا خودکار یک بار با http هم امتحان می‌شود.
+        var meRes: HttpResult
+        try {
+            meRes = http.get(target.url(PanelRoutes.ME), config.apiKey)
+        } catch (e: Exception) {
+            if (target.scheme == "https") {
+                val alt = target.copy(scheme = "http")
+                meRes = try {
+                    http.get(alt.url(PanelRoutes.ME), config.apiKey)
+                } catch (e2: Exception) {
+                    throw panelExceptionFor(e2)
+                }
+                target = alt
+                config = config.copy(useHttps = false)
+                probes += PanelCheck("پروتکل", true, "پنل روی http جواب داد (به‌جای https)")
+                runCatching { panelDao.saveConfig(config) }
+            } else {
+                throw panelExceptionFor(e)
+            }
+        }
+        probes += PanelCheck(
+            "اتصال به مسیر ادمین (${PanelRoutes.ME})",
+            meRes.ok,
+            when {
+                meRes.ok -> "کد ۲۰۰ — مسیر و کلید پذیرفته شد"
+                meRes.isInvalidProxyPath -> "کد ۴۰۰ invalid request — این مسیر، مسیر ادمین نیست"
+                meRes.isUnauthorized -> "کد ${meRes.code} — مسیر درست است ولی کلید API معتبر نیست"
+                meRes.isHtml -> "صفحهٔ HTML — به صفحهٔ ورود ریدایرکت شدیم (کلید یا مسیر غلط)"
+                else -> "کد ${meRes.code} — ${meRes.short().ifBlank { "بدون توضیح" }}"
+            } + "\n" + meRes.url
+        )
+        if (meRes.ok) {
+            adminMe = runCatching {
+                PanelJson.lenient.decodeFromString(AdminMeDto.serializer(), meRes.body)
+            }.getOrNull()
+        }
+        // مسیر غلط یا کلید غلط → امتحان بقیهٔ مسیرها بی‌فایده است؛ همان‌جا توضیح دقیق بده
+        if (!meRes.ok && (meRes.isInvalidProxyPath || meRes.isUnauthorized || meRes.isHtml)) {
+            lastProbes = probes
+            throw failure(meRes, "تشخیص مسیر ادمین")
+        }
+
+        // ۲) نسخهٔ پنل (اطلاعاتی)
+        val infoRes = http.get(target.url(PanelRoutes.INFO), config.apiKey)
+        var version = ""
+        if (infoRes.ok) {
+            version = runCatching {
+                PanelJson.lenient.decodeFromString(PanelInfoDto.serializer(), infoRes.body)
+                    .let { it.version.ifBlank { it.panelVersion ?: "" } }
+            }.getOrDefault("")
+        }
+        probes += PanelCheck(
+            "نسخهٔ پنل (${PanelRoutes.INFO})",
+            infoRes.ok,
+            if (infoRes.ok) version.ifBlank { "نامشخص" } else "کد ${infoRes.code} — اطلاعاتی است، ادامه می‌دهیم"
+        )
+
+        // ۳) فهرست کاربران: سه سبک، اول آن که قبلاً جواب داده
+        val saved = ApiFlavor.from(config.apiFlavor)
+        val order = buildList {
+            saved?.let { add(it) }
+            ApiFlavor.entries.forEach { if (it != saved) add(it) }
+        }
+        var lastError: PanelException? = null
+        for (f in order) {
+            val url = target.url(
+                when (f) {
+                    ApiFlavor.PAGE -> PanelRoutes.USERS_PAGE
+                    ApiFlavor.LEGACY -> PanelRoutes.USERS_LEGACY
+                    ApiFlavor.V1 -> PanelRoutes.V1_USERS
+                }
             )
+            val r = try {
+                http.get(url, config.apiKey)
+            } catch (e: Exception) {
+                lastError = panelExceptionFor(e)
+                probes += PanelCheck("فهرست کاربران — ${f.label}", false, panelExceptionFor(e).message ?: "خطا")
+                continue
+            }
+            if (r.ok || r.isEmptyUserList) {
+                val users = parseUsers(r, f)
+                probes += PanelCheck(
+                    "فهرست کاربران — ${f.label}",
+                    true,
+                    (if (r.isEmptyUserList) "بدون کاربر" else "${users.size} کاربر") + "\n" + url
+                )
+                flavor = f
+                workingEndpoint = url
+                lastProbes = probes
+                val resolved = Resolved(
+                    config = config,
+                    target = target,
+                    flavor = f,
+                    users = users,
+                    meta = metaOf(r, f),
+                    version = version
+                )
+                cache = resolved
+                cacheAt = System.currentTimeMillis()
+                return@guard resolved
+            }
+            probes += PanelCheck(
+                "فهرست کاربران — ${f.label}",
+                false,
+                when {
+                    r.isInvalidProxyPath -> "کد ۴۰۰ invalid request — مسیر ادمین نیست"
+                    r.isUnauthorized -> "کد ${r.code} — کلید API رد شد"
+                    r.isHtml -> "صفحهٔ HTML — به صفحهٔ ورود ریدایرکت شدیم"
+                    else -> "کد ${r.code} — در این نسخه وجود ندارد"
+                } + "\n" + url
+            )
+            if (lastError == null) lastError = failure(r, "فهرست کاربران")
         }
-        if (text.isBlank()) throw PanelException("پنل برای «$what» پاسخ خالی داد", PanelException.Kind.SERVER)
-        return text
+
+        lastProbes = probes
+        throw lastError ?: PanelException(
+            "هیچ‌کدام از روش‌های شناخته‌شدهٔ ساخت کاربر در پنل شما جواب نداد. " +
+                "آدرس پنل را بررسی کنید یا گزارش عیب‌یابی را بفرستید.",
+            PanelException.Kind.NOT_FOUND
+        )
     }
 
-    private fun element(text: String) =
-        runCatching { PanelJson.lenient.decodeFromString(kotlinx.serialization.json.JsonElement.serializer(), text) }
-            .getOrNull()
+    private fun metaOf(r: HttpResult, f: ApiFlavor): UsersMetaDto {
+        if (!r.ok || f != ApiFlavor.PAGE) return UsersMetaDto()
+        val el = element(r.body) ?: return UsersMetaDto()
+        val obj = el as? JsonObject ?: return UsersMetaDto()
+        val src: JsonElement = (obj["meta"] as? JsonObject) ?: obj
+        return runCatching { PanelJson.lenient.decodeFromJsonElement<UsersMetaDto>(src) }
+            .getOrDefault(UsersMetaDto())
+    }
 
-    /** اگر مسیر جدید ۴۰۴/۴۰۵ داد، مسیر کلاسیک امتحان می‌شود. */
-    private suspend fun <T> withFallback(primary: suspend () -> T, classic: suspend () -> T): T {
-        return try {
-            primary()
-        } catch (e: HttpException) {
-            if (e.code() == 404 || e.code() == 405) classic() else throw e
+    private fun parseUsers(r: HttpResult, f: ApiFlavor): List<PanelUserDto> {
+        if (r.isEmptyUserList) return emptyList()
+        val el = element(r.body) ?: return emptyList()
+        return when (f) {
+            ApiFlavor.PAGE -> PanelJson.parseUsers(el).first
+            else -> when (el) {
+                is JsonArray -> el.mapNotNull { row -> runCatching { PanelJson.parseUser(row) }.getOrNull() }
+                is JsonObject -> (el["users"] as? JsonArray)
+                    ?.mapNotNull { row -> runCatching { PanelJson.parseUser(row) }.getOrNull() }
+                    ?: emptyList()
+                else -> emptyList()
+            }
         }
     }
+
+    data class Resolved(
+        val config: PanelConfig,
+        val target: PanelTarget,
+        val flavor: ApiFlavor,
+        val users: List<PanelUserDto>,
+        val meta: UsersMetaDto,
+        val version: String
+    )
 
     // ─────────────────────────────────────────────────────── خواندن
 
     suspend fun testConnection(): PanelConnection = guard {
-        val c = config()
-        val api = service(c)
-        val path = proxyPath(c)
-
-        // نسخهٔ پنل «خوب است بدانیم» است؛ نبودنش اتصال را رد نمی‌کند.
-        val version = runCatching {
-            val text = jsonText(api.panelInfo(path, c.apiKey), "نسخهٔ پنل")
-            PanelJson.lenient.decodeFromString(PanelInfoDto.serializer(), text)
-                .let { dto -> dto.version.ifBlank { dto.panelVersion ?: "" } }
-        }.getOrDefault("")
-
-        val (users, meta, endpoint) = fetchUsersInternal(api, path, c.apiKey)
-
-        // پایهٔ لینک اشتراک: اگر کاربر دستی وارد نکرده باشد، از خود پنل گرفته می‌شود.
-        val discovered = PanelUrl.normalizeLinkBase(meta.linkDomains.firstOrNull()?.base ?: "")
-        val storedBase = c.subscriptionBase.ifBlank { discovered }
-        if (discovered.isNotBlank()) {
-            prefs.update { it.copy(fallbackSubscriptionBase = discovered) }
-        }
+        val res = resolve()
+        val created = endpointOf(res.target, res.flavor)
+        val discovered = discoverSubscriptionBase(res)
+        val storedBase = if (res.config.subscriptionBase.isBlank()) discovered else res.config.subscriptionBase
         panelDao.saveConfig(
-            c.copy(
-                panelVersion = version.ifBlank { c.panelVersion },
+            res.config.copy(
+                panelVersion = res.version.ifBlank { res.config.panelVersion },
                 lastSyncAt = System.currentTimeMillis(),
-                subscriptionBase = storedBase
+                subscriptionBase = storedBase,
+                apiFlavor = res.flavor.id
             )
         )
+        if (discovered.isNotBlank()) prefs.update { it.copy(fallbackSubscriptionBase = discovered) }
         PanelConnection(
             ok = true,
-            version = version,
-            adminUuid = meta.meUuid,
-            canAddUsers = meta.canAdd,
-            readOnly = meta.readOnly,
+            version = res.version.ifBlank { panelVersion },
+            adminUuid = adminMe?.uuid ?: res.meta.meUuid,
+            adminName = adminMe?.name.orEmpty(),
+            canAddUsers = res.meta.canAdd,
+            readOnly = res.meta.readOnly,
             linkBase = storedBase,
-            usersCount = users.size,
-            endpoint = endpoint,
+            usersCount = res.users.size,
+            endpoint = created,
+            flavor = res.flavor.label,
             message = "اتصال برقرار است"
         )
     }
 
-    suspend fun fetchUsers(): Pair<List<PanelUserDto>, UsersMetaDto> = guard {
-        val c = config()
-        val (users, meta, _) = fetchUsersInternal(service(c), proxyPath(c), c.apiKey)
-        if (meta.linkDomains.isNotEmpty()) {
-            val discovered = PanelUrl.normalizeLinkBase(meta.linkDomains.first().base)
-            prefs.update { it.copy(fallbackSubscriptionBase = discovered) }
-            if (c.subscriptionBase.isBlank() && discovered.isNotBlank()) {
-                panelDao.saveConfig(c.copy(subscriptionBase = discovered))
-            }
-        }
-        users to meta
+    private fun endpointOf(target: PanelTarget, f: ApiFlavor): String = when (f) {
+        ApiFlavor.PAGE -> target.url(PanelRoutes.USERS_PAGE)
+        ApiFlavor.LEGACY -> target.url(PanelRoutes.USERS_LEGACY)
+        ApiFlavor.V1 -> target.url(PanelRoutes.V1_USERS)
     }
 
-    private suspend fun fetchUsersInternal(
-        api: HiddifyApi,
-        path: String,
-        apiKey: String
-    ): Triple<List<PanelUserDto>, UsersMetaDto, String> {
-        if (preferPageApi) {
-            try {
-                val text = jsonText(api.usersPage(path, apiKey), "فهرست کاربران")
-                val (users, meta) = PanelJson.parseUsers(element(text))
-                workingEndpoint = "/api/v2/admin/users/"
-                return Triple(users, meta, workingEndpoint)
-            } catch (e: HttpException) {
-                if (e.code() != 404 && e.code() != 405) throw e
-                preferPageApi = false
-            }
-        }
-        // مسیر کلاسیک: آرایهٔ خالص کاربران. اگر پنل هنوز کاربری ندارد، ۴۰۴ می‌دهد
-        // («You have no user») که یعنی «فهرست خالی»، نه خطا.
-        val text = try {
-            jsonText(api.usersClassic(path, apiKey), "فهرست کاربران (کلاسیک)")
-        } catch (e: HttpException) {
-            if (e.code() == 404) {
-                workingEndpoint = "/api/v2/admin/user/"
-                return Triple(emptyList(), UsersMetaDto(), workingEndpoint)
-            }
-            throw e
-        }
-        val (users, meta) = PanelJson.parseUsers(element(text))
-        workingEndpoint = "/api/v2/admin/user/"
-        return Triple(users, meta, workingEndpoint)
+    /** فهرست تازه از پنل (برای همگام‌سازی؛ از حافظهٔ موقت استفاده نمی‌کند) */
+    suspend fun fetchUsers(): Pair<List<PanelUserDto>, UsersMetaDto> {
+        val res = resolve(force = true)
+        return res.users to res.meta
     }
 
     suspend fun fetchUser(uuid: String): PanelUserDto = guard {
-        val c = config()
-        val api = service(c)
-        val path = proxyPath(c)
-        val text = withFallback(
-            primary = { jsonText(api.userPage(path, uuid, c.apiKey), "کاربر") },
-            classic = { jsonText(api.userClassic(path, uuid, c.apiKey), "کاربر (کلاسیک)") }
-        )
-        PanelJson.parseUser(element(text))
+        val res = resolve()
+        userOf(res, uuid) ?: throw PanelException("کاربر در پنل پیدا نشد", PanelException.Kind.NOT_FOUND)
     }
 
-    private suspend fun findCreated(uuid: String): PanelUserDto? = runCatching {
-        fetchUsers().first.firstOrNull { it.uuid == uuid }
-    }.getOrNull()
+    private fun userOf(res: Resolved, uuid: String): PanelUserDto? {
+        val url = when (res.flavor) {
+            ApiFlavor.PAGE -> res.target.url(PanelRoutes.userPage(uuid))
+            ApiFlavor.LEGACY -> res.target.url(PanelRoutes.userLegacy(uuid))
+            ApiFlavor.V1 -> res.target.url(PanelRoutes.V1_USERS + "?uuid=" + uuid)
+        }
+        val r = http.get(url, res.config.apiKey)
+        if (!r.ok) return null
+        val text = r.body.trim()
+        if (res.flavor == ApiFlavor.V1 && text.startsWith("[")) {
+            // پاسخ v1 برای ?uuid= یک شیء است؛ ولی اگر آرایه بود، همان را می‌خوانیم
+            return (element(text) as? JsonArray)?.firstOrNull()?.let {
+                runCatching { PanelJson.parseUser(it) }.getOrNull()
+            }
+        }
+        return parseUserBody(text)
+    }
 
     // ─────────────────────────────────────────────────────── نوشتن
 
     /**
-     * ساخت کاربر = `POST <آدرس پنل>/api/v2/admin/users/`
-     * (همان آدرسی که در تنظیمات به‌صورت «آدرس ساخت کاربر» نوشته می‌شود.)
+     * ساخت کاربر — همان عملیاتی که «کار نمی‌کرد».
      *
-     * دلیل اینکه قبلاً «ساخته نشد» گزارش می‌شد در حالی که کاربر ساخته شده بود:
-     * پنل بعد از هر کاربر، `quick_apply_users` را اجرا می‌کند و پاسخ ممکن است از تایم‌اوت
-     * بگذرد؛ OkHttp هم درخواست را دوباره می‌فرستاد و بار دوم با پیام
-     * «A user with this UUID exists» رد می‌شد. حالا UUID از قبل ساخته می‌شود و
-     * در صورت خطا، وجود کاربر در پنل بررسی می‌شود؛ همان پیام «تکراری» هم موفقیت است.
+     * بدنهٔ درخواست بر اساس نسخه ساخته می‌شود:
+     *  • ۱۴ (`/users/`): `name, usage_limit_GB, package_days, mode, comment, enable, uuid`
+     *  • ۱۱–۱۴ (`/user/`): همان + `uuid` (اسکیمای نسخه‌های قدیمی همین‌ها را می‌شناسد)
+     *  • ۱۰–۱۴ (`/api/v1/user/`): `uuid` اجباری است و پاسخ «کاربر» برنمی‌گرداند
+     *
+     * اگر پاسخ خطا/تایم‌اوت بود، **وجود کاربر در پنل بررسی می‌شود**؛ چون پنل بعد از هر نوشتن
+     * `quick_apply_users` را اجرا می‌کند و ممکن است پاسخ دیر برسد.
      */
     suspend fun createUser(
         name: String,
@@ -429,299 +650,318 @@ class PanelClient(
         comment: String = "",
         uuid: String = UUID.randomUUID().toString()
     ): PanelUserDto = guard {
-        val c = config()
-        val api = service(c)
-        val path = proxyPath(c)
-        val request = CreateUserRequest(
-            name = name.ifBlank { "user" },
-            usageLimitGb = if (gb <= 0) 100.0 else gb,
-            packageDays = if (days <= 0) 30 else days,
-            comment = comment.ifBlank { null },
-            enable = true,
-            mode = "no_reset",
-            uuid = uuid
+        val res = resolve()
+        val body = objOf(
+            "uuid" to str(uuid),
+            "name" to str(name.ifBlank { "user" }),
+            "usage_limit_GB" to num(if (gb <= 0) 100.0 else gb),
+            "package_days" to int(if (days <= 0) 30 else days),
+            "mode" to str("no_reset"),
+            "comment" to if (comment.isBlank()) null else str(comment),
+            "enable" to bool(true)
         )
-        val attempt = runCatching {
-            val text = withFallback(
-                primary = { jsonText(api.createUserPage(path, c.apiKey, request), "ساخت کاربر") },
-                classic = { jsonText(api.createUserClassic(path, c.apiKey, request), "ساخت کاربر (کلاسیک)") }
-            )
-            PanelJson.parseUser(element(text))
+        val url = when (res.flavor) {
+            ApiFlavor.PAGE -> res.target.url(PanelRoutes.USERS_PAGE)
+            ApiFlavor.LEGACY -> res.target.url(PanelRoutes.USERS_LEGACY)
+            ApiFlavor.V1 -> res.target.url(PanelRoutes.V1_USERS)
         }
-        attempt.getOrNull()?.let { return@guard it }
+        val json = PanelJson.lenient.encodeToString(JsonObject.serializer(), body)
+        val r = http.post(url, res.config.apiKey, json)
 
-        // ساخت ناموفق گزارش شد — پیش از خطا، مطمئن شویم پنل کاربر را نساخته است.
-        val err = attempt.exceptionOrNull()!!
-        val found = findCreated(uuid)
-        if (found != null) return@guard found
-        if (err.message.orEmpty().contains("exists", true)) {
-            // پیام «A user with this UUID exists» یعنی ساخت قبلی موفق بوده؛ خود کاربر را بخوان
-            val byUuid = runCatching { fetchUser(uuid) }.getOrNull()
-            if (byUuid != null) return@guard byUuid
+        if (r.ok) {
+            parseUserBody(r.body)?.let { return@guard it }
+            // v1 پاسخ `{status, msg}` می‌دهد؛ کاربر را جدا می‌خوانیم
+            userOf(res, uuid)?.let { return@guard it }
+            // ساخت انجام شده ولی پاسخ قابل خواندن نبود — از فهرست تأیید می‌گیریم
+            resolve(force = true).users.firstOrNull { it.uuid == uuid }?.let { return@guard it }
+            throw PanelException(
+                "پنل پاسخ داد ولی کاربر در فهرست دیده نشد. «عیب‌یابی» را اجرا کنید. آدرس: $url",
+                PanelException.Kind.SERVER
+            )
         }
-        throw err
+
+        // پیام «کاربر تکراری» یعنی ساخت قبلی موفق بوده (تکرار درخواست یا تأخیر پنل)
+        if (r.code == 400 && (
+                r.body.contains("exists", true) || r.body.contains("duplicat", true)
+                )
+        ) {
+            userOf(res, uuid)?.let { return@guard it }
+        }
+
+        // پیش از گزارش خطا، یک بار دیگر مطمئن شویم ساخته نشده
+        val after = runCatching { resolve(force = true).users.firstOrNull { it.uuid == uuid } }.getOrNull()
+        if (after != null) return@guard after
+
+        throw failure(r, "ساخت کاربر")
     }
 
-    private suspend fun patch(uuid: String, body: PatchUserRequest): PanelUserDto = guard {
-        val c = config()
-        val api = service(c)
-        val path = proxyPath(c)
-        val text = withFallback(
-            primary = { jsonText(api.patchUserPage(path, uuid, c.apiKey, body), "ویرایش کاربر") },
-            classic = { jsonText(api.patchUserClassic(path, uuid, c.apiKey, body), "ویرایش کاربر (کلاسیک)") }
-        )
-        PanelJson.parseUser(element(text))
+    /** آپدیت کاربر؛ بدنه بر اساس سبک ساخته می‌شود (و `start_date = null` صریح فرستاده می‌شود). */
+    private suspend fun updateUser(
+        res: Resolved,
+        uuid: String,
+        fields: Map<String, JsonElement>
+    ): PanelUserDto? {
+        val body = buildJsonObject { fields.forEach { (k, v) -> put(k, v) } }
+        val json = PanelJson.lenient.encodeToString(JsonObject.serializer(), body)
+        val r = when (res.flavor) {
+            ApiFlavor.PAGE -> http.patch(res.target.url(PanelRoutes.userPage(uuid)), res.config.apiKey, json)
+            ApiFlavor.LEGACY -> http.patch(res.target.url(PanelRoutes.userLegacy(uuid)), res.config.apiKey, json)
+            // v1 متد PATCH ندارد؛ همان POST «add_or_update» با uuid کار را انجام می‌دهد
+            ApiFlavor.V1 -> http.post(res.target.url(PanelRoutes.V1_USERS), res.config.apiKey, json)
+        }
+        if (!r.ok) throw failure(r, "ویرایش کاربر")
+        return parseUserBody(r.body) ?: userOf(res, uuid)
     }
 
     /**
-     * تمدید = دورهٔ جدید: صفر شدن مصرف، شمارش روز از اتصال بعدی (`start_date = null`)، فعال‌سازی.
+     * تمدید = دورهٔ جدید.
      *
-     * در نسخهٔ ۱۴ هیدی‌فای PATCH فیلدهای `current_usage_GB` و `start_date` را نمی‌خواند و
-     * به‌جای آن‌ها پرچم‌های `reset_usage` / `reset_days` را قبول می‌کند. هر چهار مورد
-     * فرستاده می‌شود تا هم نسخهٔ ۱۴ و هم نسخه‌های قدیمی درست تمدید شوند.
+     *  • نسخهٔ ۱۴ صفحهٔ کاربران فقط پرچم‌های `reset_usage` / `reset_days` را می‌خواند.
+     *  • مسیر کلاسیک ۱۱ تا ۱۴ `start_date = null` و `current_usage_GB = 0` را مستقیم می‌پذیرد.
+     * هر دو گروه فیلد در یک بدنه فرستاده می‌شوند تا در همهٔ نسخه‌ها درست کار کند.
      */
-    suspend fun renewPackage(uuid: String, gb: Double, days: Int, name: String? = null): PanelUserDto {
-        val body = PatchUserRequest(
-            name = name?.takeIf { it.isNotBlank() },
-            usageLimitGb = if (gb > 0) gb else null,
-            packageDays = if (days > 0) days else null,
-            currentUsageGb = 0.0,
-            enable = true,
-            resetUsage = true,
-            resetDays = true
+    suspend fun renewPackage(uuid: String, gb: Double, days: Int, name: String? = null): PanelUserDto = guard {
+        val res = resolve()
+        val fields = mutableMapOf<String, JsonElement>(
+            "enable" to bool(true),
+            "current_usage_GB" to num(0.0),
+            "start_date" to JsonNull,
+            "reset_usage" to bool(true),
+            "reset_days" to bool(true)
         )
-        val first = runCatching { patch(uuid, body) }
-        first.getOrNull()?.let { return it }
-        // اگر پنل پرچم‌ها را نپذیرفت، با بدنهٔ سادهٔ سازگار دوباره تلاش می‌کنیم
-        val retry = runCatching {
-            patch(
-                uuid,
-                PatchUserRequest(
-                    usageLimitGb = if (gb > 0) gb else null,
-                    packageDays = if (days > 0) days else null,
-                    currentUsageGb = 0.0,
-                    enable = true
-                )
-            )
-        }
-        retry.getOrNull()?.let { return it }
-        throw first.exceptionOrNull() ?: retry.exceptionOrNull()
-            ?: PanelException("تمدید انجام نشد")
+        if (gb > 0) fields["usage_limit_GB"] = num(gb)
+        if (days > 0) fields["package_days"] = int(days)
+        if (!name.isNullOrBlank()) fields["name"] = str(name)
+        val updated = updateUser(res, uuid, fields)
+        updated ?: throw PanelException("تمدید انجام شد ولی پاسخ پنل قابل خواندن نبود", PanelException.Kind.SERVER)
     }
 
-    /** افزودن حجم/روز روی بستهٔ فعلی (بدون ریست مصرف) — از اندپوینت گروهی پنل */
+    /** افزودن حجم/روز روی بستهٔ فعلی */
     suspend fun extendLimits(uuids: List<String>, addGb: Double = 0.0, addDays: Int = 0): Int = guard {
         require(uuids.isNotEmpty()) { "کاربری انتخاب نشده است" }
         require(addGb > 0 || addDays > 0) { "حجم یا روز را وارد کنید" }
-        val c = config()
-        val text = jsonText(
-            service(c).bulk(
-                proxyPath(c),
-                c.apiKey,
-                BulkRequest(
-                    action = "add_limits",
-                    uuids = uuids,
-                    gb = if (addGb > 0) addGb else 0.0,
-                    days = if (addDays > 0) addDays else 0
-                )
-            ),
-            "عملیات گروهی"
-        )
-        runCatching { PanelJson.lenient.decodeFromString(BulkResponse.serializer(), text).count }
-            .getOrDefault(uuids.size)
+        val res = resolve()
+
+        // نسخهٔ ۱۴ عملیات گروهی دارد؛ نسخه‌های قدیمی‌تر ندارند → یکی‌یکی
+        if (res.flavor == ApiFlavor.PAGE) {
+            val body = objOf(
+                "action" to str("add_limits"),
+                "uuids" to JsonArray(uuids.map { JsonPrimitive(it) }),
+                "gb" to num(if (addGb > 0) addGb else 0.0),
+                "days" to int(if (addDays > 0) addDays else 0)
+            )
+            val json = PanelJson.lenient.encodeToString(JsonObject.serializer(), body)
+            val r = http.post(res.target.url(PanelRoutes.BULK_PAGE), res.config.apiKey, json)
+            if (r.ok) {
+                return@guard runCatching { (element(r.body) as? JsonObject)?.get("count")?.toString()?.toInt() }
+                    .getOrNull() ?: uuids.size
+            }
+            if (!r.isNotFound && r.code !in 500..599) throw failure(r, "عملیات گروهی")
+            // اگر نسخهٔ ۱۴ هم bulk نداشت، به روش یکی‌یکی ادامه می‌دهیم
+        }
+
+        var done = 0
+        for (uuid in uuids) {
+            val current = userOf(res, uuid) ?: continue
+            val fields = mutableMapOf<String, JsonElement>()
+            if (addGb > 0) fields["usage_limit_GB"] = num(current.usageLimitGb + addGb)
+            if (addDays > 0) fields["package_days"] = int(current.packageDays + addDays)
+            runCatching { updateUser(res, uuid, fields) }.onSuccess { done++ }
+        }
+        if (done == 0) throw PanelException("افزودن حجم/روز انجام نشد", PanelException.Kind.SERVER)
+        done
     }
 
-    suspend fun setEnabled(uuid: String, enabled: Boolean): PanelUserDto =
-        patch(uuid, PatchUserRequest(enable = enabled))
+    suspend fun setEnabled(uuid: String, enabled: Boolean): PanelUserDto = guard {
+        val res = resolve()
+        updateUser(res, uuid, mapOf("enable" to bool(enabled)))
+            ?: throw PanelException("تغییر وضعیت انجام شد ولی پاسخ پنل خوانده نشد", PanelException.Kind.SERVER)
+    }
 
     suspend fun deleteUser(uuid: String) = guard {
-        val c = config()
-        val api = service(c)
-        val path = proxyPath(c)
-        withFallback(
-            primary = { jsonText(api.deleteUserPage(path, uuid, c.apiKey), "حذف کاربر") },
-            classic = { jsonText(api.deleteUserClassic(path, uuid, c.apiKey), "حذف کاربر (کلاسیک)") }
-        )
+        val res = resolve()
+        val r = when (res.flavor) {
+            ApiFlavor.PAGE -> http.delete(res.target.url(PanelRoutes.userPage(uuid)), res.config.apiKey)
+            ApiFlavor.LEGACY -> http.delete(res.target.url(PanelRoutes.userLegacy(uuid)), res.config.apiKey)
+            ApiFlavor.V1 -> http.delete(res.target.url(PanelRoutes.V1_USERS + "?uuid=" + uuid), res.config.apiKey)
+        }
+        if (!r.ok && !r.isNotFound) throw failure(r, "حذف کاربر")
         Unit
+    }
+
+    // ─────────────────────────────────────────────────────── لینک اشتراک
+
+    /**
+     * پایهٔ لینک اشتراک را از خودِ پنل پیدا می‌کند (اگر کاربر وارد نکرده باشد).
+     *  ۱) نسخهٔ ۱۴: `link_domains[0].base` در پاسخ فهرست کاربران
+     *  ۲) همهٔ نسخه‌ها با کلید ادمین کل: `/api/v2/admin/all-configs/` → `proxy_path_client`
+     */
+    suspend fun discoverSubscriptionBase(res: Resolved? = null): String = runCatching {
+        val r = res ?: resolve()
+        // مقدار دستی کاربر مقدم است
+        if (r.config.subscriptionBase.isNotBlank()) return@runCatching PanelUrl.normalizeLinkBase(r.config.subscriptionBase)
+        r.meta.linkDomains.firstOrNull()?.base?.let { base ->
+            val b = PanelUrl.normalizeLinkBase(base)
+            if (b.isNotBlank()) return@runCatching b
+        }
+        // all-configs: فقط ادمین کل اجازه دارد؛ اگر ۴۰۳ داد بی‌صدا رد می‌شویم
+        val ac = http.get(r.target.url(PanelRoutes.ALL_CONFIGS), r.config.apiKey)
+        if (ac.ok) {
+            val root = parseMaybeStringJson(ac.body)
+            val clientPath = findString(root, "proxy_path_client")
+            if (!clientPath.isNullOrBlank()) {
+                return@runCatching PanelUrl.normalizeLinkBase("${r.target.origin}/$clientPath/")
+            }
+        }
+        PanelUrl.normalizeLinkBase(prefs.current.fallbackSubscriptionBase)
+    }.getOrDefault(PanelUrl.normalizeLinkBase(prefs.current.fallbackSubscriptionBase))
+
+    /** پاسخ همهٔ‌جا ممکن است یک رشتهٔ JSON دوباره‌کدگذاری‌شده باشد (`json.dumps` داخل پاسخ). */
+    private fun parseMaybeStringJson(text: String): JsonElement? {
+        val first = element(text) ?: return null
+        return if (first is JsonPrimitive && first.isString) element(first.content) else first
+    }
+
+    /** جست‌وجوی بازگشتی کلید در JSON (برای پیدا کردن `proxy_path_client` در هر ساختاری) */
+    private fun findString(el: JsonElement?, key: String): String? {
+        if (el == null) return null
+        return when (el) {
+            is JsonObject -> {
+                (el[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+                    ?: el.values.asSequence().mapNotNull { findString(it, key) }.firstOrNull()
+            }
+            is JsonArray -> el.asSequence().mapNotNull { findString(it, key) }.firstOrNull()
+            else -> null
+        }
+    }
+
+    fun subscriptionUrl(uuid: String, linkBase: String): String {
+        val base = PanelUrl.normalizeLinkBase(linkBase.ifBlank { prefs.current.fallbackSubscriptionBase })
+        return PanelUrl.subscriptionLink(base, uuid)
     }
 
     // ─────────────────────────────────────────────────────── عیب‌یابی
 
     /**
-     * بررسی مرحله‌به‌مرحلهٔ اتصال. هر مرحله نتیجهٔ خودش را می‌دهد تا معلوم شود
-     * دقیقاً کجا مشکل است (دامنه، مسیر، کلید، اجازهٔ ساخت، لینک).
+     * عیب‌یابی کامل: هر مرحله یک ردیف، همراه با آدرس دقیق و کد وضعیت.
+     * این همان چیزی است که «۴۰۴» را از یک پیام مبهم به علتِ مشخص تبدیل می‌کند.
      */
     suspend fun diagnose(): List<PanelCheck> {
-        val checks = mutableListOf<PanelCheck>()
         lastRawError = ""
-        val c = runCatching { config() }.getOrElse {
-            checks += PanelCheck("تنظیمات پنل", false, it.message ?: "تنظیم نشده")
+        val checks = mutableListOf<PanelCheck>()
+        val c = runCatching { configOrThrow() }.getOrElse {
+            return listOf(PanelCheck("تنظیمات پنل", false, it.message ?: "تنظیم نشده"))
+        }
+        val t = PanelTarget.of(c)
+        checks += PanelCheck("آدرس پنل", t.proxyPath.isNotBlank(), t.panelUrl + "\nمسیر پروکسی ادمین: " + t.proxyPath)
+
+        val res = runCatching { resolve(force = true) }.getOrElse { e ->
+            checks += lastProbes
+            val pe = panelExceptionFor(e)
+            checks += PanelCheck(
+                "نتیجه",
+                false,
+                (pe.message ?: "خطای نامشخص") +
+                    if (lastRawError.isNotBlank()) "\n— آخرین پاسخ خام —\n" + lastRawError.take(500) else ""
+            )
             return checks
         }
-        val parts = PanelUrl.normalize(c.host, c.adminProxyPath, c.useHttps)
+
+        checks += lastProbes
+        checks += PanelCheck("سبک API که جواب داد", true, res.flavor.label)
         checks += PanelCheck(
-            "آدرس پنل",
-            parts.proxyPath.isNotBlank(),
-            parts.panelUrl + if (parts.proxyPath.isBlank()) "  ← مسیر پروکسی ادمین پیدا نشد" else ""
+            "کاربر متصل",
+            adminMe?.uuid?.isNotBlank() == true,
+            (adminMe?.name?.ifBlank { "—" } ?: "—") + " • " + (adminMe?.uuid ?: "شناسه خوانده نشد")
         )
-        val api = service(c)
-        val path = parts.proxyPath
-
-        // ۱) فهرست کاربران: هم مسیر و هم کلید را با هم می‌سنجد
-        val users = runCatching { fetchUsers() }
-        val meta = users.getOrNull()?.second
-        checks += if (users.isSuccess) {
-            val list = users.getOrThrow().first
-            PanelCheck(
-                "مسیر ادمین و کلید API",
-                true,
-                "پاسخ گرفت • ${list.size} کاربر • مسیر ${workingEndpoint.ifBlank { "?" }}" +
-                    if (meta?.readOnly == true) " • پنل read-only" else ""
-            )
-        } else {
-            val err = users.exceptionOrNull()!!
-            val message = err.message.orEmpty()
-            val hint = when {
-                message.contains("صفحهٔ ورود") || message.contains("HTML") ->
-                    "کلید API درست نیست یا مسیر ادمین اشتباه است (پنل به صفحهٔ ورود ریدایرکت کرد)."
-                message.contains("invalid request", true) || message.contains("Invalid Proxy Path", true) ->
-                    "این مسیر، «مسیر ادمین» نیست. آدرس پنل را از نوار آدرس مرورگر (وقتی با حساب ادمین وارد شده‌اید) کامل کپی کنید."
-                else -> null
+        checks += PanelCheck("تعداد کاربران", true, res.users.size.toString())
+        checks += PanelCheck(
+            "اجازهٔ ساخت کاربر",
+            res.meta.canAdd && !res.meta.readOnly,
+            when {
+                res.meta.readOnly -> "پنل read-only است؛ ساخت مسدود"
+                !res.meta.canAdd -> "سقف کاربران/ترافیک ادمین پر است"
+                res.flavor != ApiFlavor.PAGE -> "در این نسخه اطلاعات محدودیت از پنل خوانده نمی‌شود؛ ساخت آزمایشی را بزنید"
+                else -> "آزاد"
             }
-            // اگر مسیر درست باشد ولی مسیر ادمین نباشد، api/panel/info جواب می‌دهد؛
-            // این تفاوت را به کاربر بگوییم تا سردرگم نشود.
-            val info = runCatching {
-                jsonText(api.panelInfo(path, c.apiKey), "نسخهٔ پنل")
-            }
-            val infoNote = if (info.isSuccess && !message.contains("صفحهٔ ورود")) {
-                " (اتصال به پنل برقرار است، پس آدرس/کلید سالم است؛ فقط مسیر ادمین فرق دارد.)"
-            } else ""
-            PanelCheck(
-                "مسیر ادمین و کلید API",
-                false,
-                (hint ?: message).ifBlank { "خطای نامشخص" } + infoNote
-            )
-        }
-
-        // ۲) نسخهٔ پنل (اطلاعاتی)
-        val info = runCatching { jsonText(api.panelInfo(path, c.apiKey), "نسخهٔ پنل") }
-        checks += if (info.isSuccess) {
-            val v = runCatching {
-                PanelJson.lenient.decodeFromString(PanelInfoDto.serializer(), info.getOrThrow()).version
-            }.getOrDefault("")
-            PanelCheck("نسخهٔ پنل", true, v.ifBlank { "نامشخص" })
-        } else {
-            PanelCheck("نسخهٔ پنل", true, "قابل خواندن نبود (برای کار اپ لازم نیست)")
-        }
-
-        // ۳) اجازهٔ ساخت
-        checks += if (meta == null) {
-            PanelCheck("اجازهٔ ساخت کاربر", false, "بدون فهرست کاربران قابل بررسی نیست")
-        } else {
-            PanelCheck(
-                "اجازهٔ ساخت کاربر",
-                meta.canAdd && !meta.readOnly,
-                when {
-                    meta.readOnly -> "پنل روی نود read-only است؛ ساخت کاربر مسدود است"
-                    !meta.canAdd -> "سقف کاربران/ترافیک ادمین پر است (در پنل افزایش دهید)"
-                    else -> "آزاد — از اپ می‌توانید کاربر بسازید"
-                }
-            )
-        }
-
-        // ۴) آدرس ساخت کاربر (همان چیزی که استفاده می‌شود)
-        val ep = endpoints(c)
+        )
+        val ep = endpoints(c.copy(apiFlavor = res.flavor.id, subscriptionBase =
+        if (c.subscriptionBase.isNotBlank()) c.subscriptionBase else discoverSubscriptionBase(res)))
         checks += PanelCheck("آدرس ساخت کاربر", true, ep.createUserUrl)
-
-        // ۵) لینک اشتراک — مستقل از مسیر ادمین
-        val links = meta?.linkDomains.orEmpty()
-        val sub = ep.subscriptionBase
         checks += PanelCheck(
             "پایهٔ لینک اشتراک",
-            links.isNotEmpty() || sub.isNotBlank(),
-            when {
-                links.isNotEmpty() -> links.first().base
-                sub.isNotBlank() -> "$sub  (دستی)"
-                else -> "دامنهٔ کلاینت در پنل پیدا نشد؛ در تنظیمات دستی وارد کنید"
-            } + if (links.isNotEmpty() && sub.isNotBlank() && sub != PanelUrl.normalizeLinkBase(links.first().base)) {
-                "\nتوجه: مقدار دستی ($sub) با پنل (${links.first().base}) یکی نیست."
-            } else ""
+            ep.subscriptionBase.isNotBlank(),
+            ep.subscriptionBase.ifBlank { "پیدا نشد؛ در تنظیمات دستی وارد کنید" } +
+                if (ep.subscriptionExample.isNotBlank()) "\nنمونه: " + ep.subscriptionExample else ""
         )
         return checks
     }
 
+    /** فقط جدول کاوش (برای دکمهٔ «جستجوی خودکار» در تنظیمات) */
+    suspend fun scan(): List<PanelCheck> {
+        val res = runCatching { resolve(force = true) }
+        val checks = lastProbes.toMutableList()
+        res.onSuccess {
+            checks += PanelCheck("سبک API", true, it.flavor.label + " — " + it.users.size + " کاربر")
+        }.onFailure {
+            checks += PanelCheck("نتیجه", false, panelExceptionFor(it).message ?: "خطا")
+        }
+        return checks
+    }
+
     /**
-     * تست واقعی ساخت کاربر: یک کاربر موقت می‌سازد و بلافاصله پاکش می‌کند.
-     * این تنها راه قطعی برای فهمیدن اینکه «ساخت کاربر» کار می‌کند یا نه.
+     * آزمون واقعی ساخت کاربر: یک کاربر موقت می‌سازد و بلافاصله پاکش می‌کند.
+     * اگر این سبز شد، ساختِ واقعی هم کار می‌کند.
      */
     suspend fun probeCreate(): PanelCheck {
         lastRawError = ""
         val stamp = System.currentTimeMillis().toString().takeLast(6)
         val name = "cmbtools-test-$stamp"
+        val uuid = UUID.randomUUID().toString()
         return try {
-            val created = createUser(
-                name = name,
-                gb = 1.0,
-                days = 1,
-                comment = "cmbtools:probe",
-                uuid = UUID.randomUUID().toString()
-            )
+            val created = createUser(name = name, gb = 1.0, days = 1, comment = "cmbtools:probe", uuid = uuid)
             val removed = runCatching { deleteUser(created.uuid) }
             PanelCheck(
                 "ساخت کاربر آزمایشی",
                 true,
-                if (removed.isSuccess) "کاربر «$name» ساخته و پاک شد ✅"
-                else "کاربر «$name» ساخته شد ✅ (پاک‌کردن آزمایشی نشد: ${removed.exceptionOrNull()?.message})"
+                "کاربر «$name» ساخته شد ✅" +
+                    (if (removed.isSuccess) " و پاک شد." else " (پاک‌کردن نشد: ${removed.exceptionOrNull()?.message})") +
+                    "\nسبک: " + (flavor?.label ?: "—")
             )
         } catch (e: Exception) {
-            PanelCheck("ساخت کاربر آزمایشی", false, errText(e) + rawSuffix())
+            PanelCheck(
+                "ساخت کاربر آزمایشی",
+                false,
+                (panelExceptionFor(e).message ?: "خطا") +
+                    if (lastRawError.isNotBlank()) "\n— آخرین پاسخ خام —\n" + lastRawError.take(400) else ""
+            )
         }
     }
 
-    private fun rawSuffix(): String =
-        if (lastRawError.isBlank()) "" else "\n" + lastRawError.take(400)
-
-    private fun errText(e: Throwable): String = when (e) {
-        is PanelException -> e.message ?: "خطا"
-        is HttpException -> httpDetail(e)
-        else -> e.message ?: e::class.java.simpleName
-    }
-
-    /** گزارش متنی برای کپی/ارسال به پشتیبانی */
+    /** گزارش متنی برای کپی/ارسال (کلید ماسک می‌شود) */
     fun reportText(checks: List<PanelCheck>, config: PanelConfig?): String {
         val c = config ?: PanelConfig()
         val ep = endpoints(c)
         val keyMasked = if (c.apiKey.length <= 8) "****" else "****" + c.apiKey.takeLast(8)
         val sb = StringBuilder()
         sb.appendLine("گزارش اتصال تیزنت")
+        sb.appendLine("نسخهٔ اپ: 0.3.2")
         sb.appendLine("آدرس پنل: ${ep.panelUrl}")
-        sb.appendLine("آدرس API: ${ep.apiBase}")
-        sb.appendLine("آدرس ساخت کاربر: ${ep.createUserUrl}")
+        sb.appendLine("مسیر پروکسی ادمین: ${PanelTarget.of(c).proxyPath}")
+        sb.appendLine("سبک API: ${ep.flavor}")
+        sb.appendLine("نسخهٔ پنل: ${ep.version.ifBlank { "?" }}")
+        sb.appendLine("آدرس ساخت کاربر: ${ep.createUserUrl.ifBlank { "—" }}")
         sb.appendLine("پایهٔ لینک اشتراک: ${ep.subscriptionBase.ifBlank { "—" }}")
         sb.appendLine("کلید API: $keyMasked")
         sb.appendLine("—")
-        checks.forEach { c2 ->
-            sb.appendLine((if (c2.ok) "✅ " else "❌ ") + c2.title + ": " + c2.detail)
+        checks.forEach { chk ->
+            sb.appendLine((if (chk.ok) "✅ " else "❌ ") + chk.title + ": " + chk.detail)
         }
         if (lastRawError.isNotBlank()) {
             sb.appendLine("— آخرین پاسخ خام پنل —")
-            sb.appendLine(lastRawError.take(800))
+            sb.appendLine(lastRawError.take(900))
         }
         return sb.toString()
-    }
-
-    /**
-     * لینک اشتراک کاربر.
-     *
-     * الگوی هیدی‌فای ۱۴: `https://<domain>/<proxy_path_client>/<user_uuid>/`
-     * — یعنی پایهٔ لینک اشتراک (نه مسیر ادمین) + شناسهٔ کاربر.
-     */
-    fun subscriptionUrl(uuid: String, linkBase: String): String {
-        val base = PanelUrl.normalizeLinkBase(
-            linkBase.ifBlank { prefs.current.fallbackSubscriptionBase }
-        )
-        if (base.isBlank()) return ""
-        return base + uuid + "/"
     }
 
     companion object {

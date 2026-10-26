@@ -203,6 +203,11 @@ data class PanelConfig(
      * جدا از مسیر ادمین؛ خالی = خودکار از پنل خوانده شود.
      */
     val subscriptionBase: String = "",
+    /**
+     * سبک API که در این پنل جواب داد (`PAGE` / `LEGACY` / `V1`).
+     * خالی = هنوز تشخیص داده نشده؛ اپ نسخه‌های ۱۱ تا ۱۴ را خودکار امتحان می‌کند.
+     */
+    val apiFlavor: String = "",
     /** آخرین نسخهٔ خوانده‌شده از پنل */
     val panelVersion: String = "",
     val lastSyncAt: Long = 0,

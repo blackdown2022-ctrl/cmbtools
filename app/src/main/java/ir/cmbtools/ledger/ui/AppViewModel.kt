@@ -598,19 +598,52 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val r: PanelConnection = c.panelService.test()
             refreshPanelEndpoints()
             _panelStatus.value = buildString {
-                append("متصل • نسخهٔ ").append(Money.toPersian(r.version.ifBlank { "?" }))
+                append("متصل • نسخهٔ پنل ").append(Money.toPersian(r.version.ifBlank { "?" }))
                 append(" • ").append(Money.toPersian(r.usersCount.toString())).append(" کاربر")
+                if (r.adminName.isNotBlank()) append(" • ادمین: ").append(r.adminName)
                 append(" • ").append(if (r.readOnly) "پنل read-only" else "قابل نوشتن")
                 if (!r.canAddUsers) append(" • سقف کاربران/ترافیک پر است")
-                if (r.endpoint.isNotBlank()) append(" • مسیر ").append(r.endpoint)
-                if (r.linkBase.isNotBlank()) append(" • لینک: ").append(r.linkBase)
+                if (r.flavor.isNotBlank()) append("\nسبک API: ").append(r.flavor)
+                if (r.endpoint.isNotBlank()) append("\n").append(r.endpoint)
+                if (r.linkBase.isNotBlank()) append("\nلینک اشتراک: ").append(r.linkBase)
             }
             success("اتصال پنل برقرار است (نسخه ${r.version})")
         } catch (e: Exception) {
-            _panelStatus.value = "اتصال ناموفق"
+            val kind = (e as? PanelException)?.kind
+            _panelStatus.value = when (kind) {
+                PanelException.Kind.PATH -> "مسیر ادمین اشتباه است"
+                PanelException.Kind.AUTH -> "کلید API یا مسیر اشتباه است"
+                PanelException.Kind.NETWORK -> "شبکه/دامنه در دسترس نیست"
+                PanelException.Kind.NOT_FOUND -> "سرویس موردنیاز در این نسخهٔ پنل پیدا نشد"
+                else -> "اتصال ناموفق"
+            }
             failure(e.message ?: "اتصال برقرار نشد")
         } finally {
             _busy.value = false
+        }
+    }
+
+    /**
+     * «جستجوی خودکار»: همهٔ مسیرها و سبک‌های API نسخه‌های ۱۱ تا ۱۴ را امتحان می‌کند
+     * و جدول نتیجه (آدرس + کد وضعیت) را نشان می‌دهد.
+     */
+    fun scanPanel() = viewModelScope.launch {
+        _busy.value = true
+        _busyText.value = "در حال جستجوی مسیر و نسخهٔ پنل..."
+        try {
+            val checks = c.panelService.scan()
+            _panelChecks.value = checks
+            refreshPanelEndpoints()
+            val ok = checks.count { it.ok }
+            success(
+                if (ok > 0) "${Money.toPersian(ok.toString())} مرحله موفق بود — جزئیات را ببینید"
+                else "هیچ مسیری جواب نداد — جزئیات را ببینید"
+            )
+        } catch (e: Exception) {
+            failure(e.message ?: "جستجو ناموفق بود")
+        } finally {
+            _busy.value = false
+            _busyText.value = ""
         }
     }
 

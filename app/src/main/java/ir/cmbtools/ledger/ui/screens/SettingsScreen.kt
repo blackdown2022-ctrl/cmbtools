@@ -139,8 +139,8 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
             SectionCard(title = "اتصال به پنل هیدی‌فای") {
                 Text(
                     "برای اینکه ساخت کاربر و لینک اشتراک درست کار کند، این سه مورد را پر کنید. " +
-                        "مقدار «آدرس ساخت کاربر» و «لینک اشتراک» را پایین همین کارت می‌بینید؛ " +
-                        "هیچ‌کدام دیگر پنهان نیست.",
+                        "اپ با نسخه‌های ۱۱ تا ۱۴ پنل هیدی‌فای کار می‌کند و مسیر/سبک درست را خودش پیدا می‌کند؛ " +
+                        "نتیجهٔ جستجو را پایین همین کارت می‌بینید.",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )
@@ -208,6 +208,9 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                             OutlinedButton(onClick = { vm.probePanelCreate() }, modifier = Modifier.fillMaxWidth()) {
                                 Text("تست ساخت کاربر در پنل")
                             }
+                            OutlinedButton(onClick = { vm.scanPanel() }, modifier = Modifier.fillMaxWidth()) {
+                                Text("جستجوی خودکار مسیر (نسخه ۱۱ تا ۱۴)")
+                            }
                             OutlinedButton(onClick = { vm.diagnosePanel() }, modifier = Modifier.fillMaxWidth()) {
                                 Text("عیب‌یابی کامل")
                             }
@@ -225,6 +228,9 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                                 OutlinedButton(onClick = { vm.probePanelCreate() }, modifier = Modifier.weight(1f)) {
                                     Text("تست ساخت کاربر")
                                 }
+                            }
+                            OutlinedButton(onClick = { vm.scanPanel() }, modifier = Modifier.fillMaxWidth()) {
+                                Text("جستجوی خودکار مسیر و نسخه")
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = { vm.diagnosePanel() }, modifier = Modifier.weight(1f)) {
@@ -261,9 +267,20 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                             "مسیر پروکسی ادمین",
                             parts.proxyPath.ifBlank { "— (از آدرس پنل پیدا نشد)" }
                         )
+                        EndpointLine("سبک API تشخیص‌داده‌شده", panelEndpoints.flavor.ifBlank { "خودکار" })
+                        EndpointLine("نسخهٔ پنل", panelEndpoints.version.ifBlank { "?" })
                         EndpointLine("پایهٔ API", api.ifBlank { "—" })
-                        EndpointLine("ساخت کاربر (POST)", if (api.isBlank()) "—" else api + "admin/users/")
-                        EndpointLine("ویرایش/حذف کاربر", if (api.isBlank()) "—" else api + "admin/users/<uuid>/")
+                        // مسیر فعال همان است که اپ واقعاً استفاده می‌کند (بر اساس نسخهٔ تشخیص‌داده‌شده)
+                        EndpointLine(
+                            "ساخت کاربر (POST) — مسیر فعال",
+                            panelEndpoints.createUserUrl.ifBlank {
+                                if (api.isBlank()) "—" else api + "admin/users/"
+                            }
+                        )
+                        EndpointLine(
+                            "مسیرهای جایگزین (اگر نسخهٔ قدیمی باشد)",
+                            if (api.isBlank()) "—" else api + "admin/user/  •  " + api + "v1/user/"
+                        )
                         EndpointLine(
                             "پایهٔ لینک اشتراک",
                             linkBase.ifBlank { "— (بعد از تست، خودکار از پنل پر می‌شود)" }

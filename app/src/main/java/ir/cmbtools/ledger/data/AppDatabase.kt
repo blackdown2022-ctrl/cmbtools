@@ -22,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         BankSms::class,
         SmsOutbox::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -78,9 +78,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * ۳ → ۴ : «سبک API» پنل (نسخهٔ ۱۱ تا ۱۴) به‌صورت ستون ذخیره می‌شود تا
+         * بعد از اولین اتصال، از همان مسیرِ درست استفاده شود.
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE panel_configs ADD COLUMN apiFlavor TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "cmb-ledger.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .fallbackToDestructiveMigration()
                 .build()
     }

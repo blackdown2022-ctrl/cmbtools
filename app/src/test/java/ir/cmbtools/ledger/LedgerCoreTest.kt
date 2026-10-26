@@ -419,6 +419,123 @@ class PanelUrlTest {
     }
 }
 
+/**
+ * تست‌های سازگاری نسخه‌های پنل (۱۱ تا ۱۴): مسیرها، سبک API و لینک اشتراک.
+ */
+class PanelCompatTest {
+
+    private fun target(url: String) = ir.cmbtools.ledger.panel.PanelTarget.of(
+        ir.cmbtools.ledger.data.PanelConfig(host = "panel.example.com", adminProxyPath = "AbC123", apiKey = "k")
+    )
+
+    @Test
+    fun proxy_path_is_always_a_single_segment() {
+        // هیدی‌فای فقط تکهٔ اول مسیر را می‌خواند؛ بقیه آدرس را به ۴۰۴ می‌برد
+        assertEquals("AbC123", PanelUrl.cleanPath("AbC123/8f14e45f-1111-2222-3333-444455556666/"))
+        assertEquals("AbC123", PanelUrl.cleanPath("AbC123/admin/users"))
+        assertEquals("AbC123", PanelUrl.cleanPath("/AbC123/"))
+        assertEquals("AbC123", PanelUrl.cleanPath("AbC123?x=1#y"))
+        assertEquals("", PanelUrl.cleanPath("api/v2/admin/users"))
+    }
+
+    @Test
+    fun subscription_link_pasted_as_panel_url_keeps_first_segment() {
+        val p = PanelUrl.normalize("https://panel.example.com/client987/8f14e45f-1111-2222-3333-444455556666/", "")
+        assertEquals("panel.example.com", p.host)
+        assertEquals("client987", p.proxyPath)
+    }
+
+    @Test
+    fun admin_api_urls_are_built_per_version() {
+        val t = target("")
+        assertEquals("https://panel.example.com/AbC123/api/v2/admin/me/", t.url(ir.cmbtools.ledger.panel.PanelRoutes.ME))
+        assertEquals("https://panel.example.com/AbC123/api/v2/admin/users/", t.url(ir.cmbtools.ledger.panel.PanelRoutes.USERS_PAGE))
+        assertEquals("https://panel.example.com/AbC123/api/v2/admin/user/", t.url(ir.cmbtools.ledger.panel.PanelRoutes.USERS_LEGACY))
+        assertEquals("https://panel.example.com/AbC123/api/v1/user/", t.url(ir.cmbtools.ledger.panel.PanelRoutes.V1_USERS))
+        assertEquals(
+            "https://panel.example.com/AbC123/api/v2/admin/users/u-1/",
+            t.url(ir.cmbtools.ledger.panel.PanelRoutes.userPage("u-1"))
+        )
+        assertEquals(
+            "https://panel.example.com/AbC123/api/v2/admin/user/u-1/",
+            t.url(ir.cmbtools.ledger.panel.PanelRoutes.userLegacy("u-1"))
+        )
+    }
+
+    @Test
+    fun flavors_round_trip_from_stored_string() {
+        assertEquals(ir.cmbtools.ledger.panel.ApiFlavor.PAGE, ir.cmbtools.ledger.panel.ApiFlavor.from("PAGE"))
+        assertEquals(ir.cmbtools.ledger.panel.ApiFlavor.LEGACY, ir.cmbtools.ledger.panel.ApiFlavor.from("LEGACY"))
+        assertEquals(ir.cmbtools.ledger.panel.ApiFlavor.V1, ir.cmbtools.ledger.panel.ApiFlavor.from("V1"))
+        assertNull(ir.cmbtools.ledger.panel.ApiFlavor.from(""))
+        assertNull(ir.cmbtools.ledger.panel.ApiFlavor.from(null))
+    }
+
+    @Test
+    fun subscription_link_is_base_plus_uuid() {
+        val uuid = "8f14e45f-1111-2222-3333-444455556666"
+        assertEquals(
+            "https://panel.example.com/client987/$uuid/",
+            PanelUrl.subscriptionLink("panel.example.com/client987", uuid)
+        )
+        // مسیر ادمین هرگز در لینک مشتری تکرار نمی‌شود
+        assertFalse(PanelUrl.subscriptionLink("https://sub.example.com/x/", uuid).contains("AbC123"))
+    }
+
+    @Test
+    fun expire_is_computed_when_panel_does_not_send_it() {
+        // نسخه‌های ۱۱ تا ۱۳ فیلد expire_date / remaining_days / status ندارند
+        val start = LocalDate.now().minusDays(10)
+        val legacyRow = ir.cmbtools.ledger.panel.PanelUserDto(
+            uuid = "u1",
+            name = "ali",
+            packageDays = 30,
+            startDate = start.toString(),
+            remainingDays = 0,
+            status = "",
+            usageLimitGb = 30.0,
+            currentUsageGb = 3.0
+        )
+        assertEquals(start.toEpochDay() + 30, legacyRow.expireEpochDay)
+        assertEquals(20, legacyRow.remainingDaysOrComputed)
+        assertEquals("active", legacyRow.statusOrComputed)
+
+        // مصرف بیشتر از حجم → no_data
+        assertEquals("no_data", legacyRow.copy(currentUsageGb = 31.0).statusOrComputed)
+        // غیرفعال‌شده
+        assertEquals("disabled", legacyRow.copy(enable = false).statusOrComputed)
+        // تاریخ گذشته
+        assertEquals("expired", legacyRow.copy(startDate = LocalDate.now().minusDays(60).toString()).statusOrComputed)
+
+        // نسخهٔ ۱۴ این فیلدها را مستقیم می‌دهد
+        val v14Row = ir.cmbtools.ledger.panel.PanelUserDto(
+            uuid = "u2",
+            name = "reza",
+            packageDays = 30,
+            startDate = "2026-01-01",
+            expireDate = "2026-02-15",
+            remainingDays = 5,
+            status = "active"
+        )
+        assertEquals(LocalDate.parse("2026-02-15").toEpochDay(), v14Row.expireEpochDay)
+        assertEquals(5, v14Row.remainingDaysOrComputed)
+        assertEquals("active", v14Row.statusOrComputed)
+    }
+
+    @Test
+    fun panel_config_exposes_full_url_for_each_flavor() {
+        val cfg = ir.cmbtools.ledger.data.PanelConfig(
+            host = "panel.example.com",
+            adminProxyPath = "AbC123",
+            apiKey = "key",
+            apiFlavor = "LEGACY",
+            subscriptionBase = "https://panel.example.com/client987/"
+        )
+        assertEquals("https://panel.example.com/AbC123", cfg.panelUrl)
+        assertTrue(cfg.apiFlavor == "LEGACY")
+    }
+}
+
 class MoneyGroupingTest {
 
     @Test

@@ -242,13 +242,15 @@ class SyncEngine(
             val renewedAt = renewalInvoicedAtThisSync[u.uuid]
                 ?: if (renewed) System.currentTimeMillis() else (old?.lastRenewedAtMillis ?: 0L)
             var initialInvoice = billing.initialInvoiceForPanelUser(u.uuid)
-            if (allowInvoicing && initialInvoice != null && panelName.hasSuffix && panelName.discountRial != null &&
-                panelName.discountRial > initialInvoice.discountRial
+            val existingInitialInvoice = initialInvoice
+            if (allowInvoicing && existingInitialInvoice != null && panelName.hasSuffix && panelName.discountRial != null &&
+                panelName.discountRial > existingInitialInvoice.discountRial
             ) {
+                val previousDiscountRial = existingInitialInvoice.discountRial
                 runCatching {
-                    billing.applyPanelInitialDiscount(initialInvoice.id, panelName.discountRial)
+                    billing.applyPanelInitialDiscount(existingInitialInvoice.id, panelName.discountRial)
                 }.onSuccess { corrected ->
-                    if (corrected != null && corrected.discountRial > initialInvoice!!.discountRial) {
+                    if (corrected != null && corrected.discountRial > previousDiscountRial) {
                         discountsCorrected++
                         initialInvoice = corrected
                         if (settings.autoSmsOnInvoice) {

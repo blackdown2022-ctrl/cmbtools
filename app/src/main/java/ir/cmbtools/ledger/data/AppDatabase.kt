@@ -24,7 +24,7 @@ import ir.cmbtools.ledger.core.InvoiceNumbering
         BankSms::class,
         SmsOutbox::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -161,28 +161,41 @@ abstract class AppDatabase : RoomDatabase() {
                        AND refType = 'OPENING_BALANCE'
                        AND atMillis <= invoices.createdAt)
                 """.trimIndent()
-                val openingCurrent = """
-                    (SELECT COALESCE(SUM(CASE WHEN direction = 'DEBIT' THEN amountRial ELSE -amountRial END), 0)
-                     FROM ledger_entries
-                     WHERE customerId = invoices.customerId
-                       AND refType = 'OPENING_BALANCE')
-                """.trimIndent()
-
                 db.execSQL("UPDATE invoices SET openingBalanceSnapshotRial = $openingAtIssue")
-                val openingDelta = "$openingCurrent - openingBalanceSnapshotRial"
-                // Keep legacy zero sentinels usable by rebuilding their prior total first.
-                db.execSQL(
-                    "UPDATE invoices SET balanceAfterRial = " +
-                        "(CASE WHEN balanceAfterRial != 0 THEN balanceAfterRial ELSE prevBalanceRial + totalRial END) + ($openingDelta)"
-                )
-                db.execSQL("UPDATE invoices SET prevBalanceRial = prevBalanceRial + ($openingDelta)")
-                db.execSQL("UPDATE invoices SET openingBalanceSnapshotRial = $openingCurrent")
+                reconcileOpeningBalanceSnapshots(db)
             }
+        }
+
+        /**
+         * ۸ → ۹: یک ترمیمِ مجدد برای فاکتورهای پایگاه‌هایی که قبلاً به نسخهٔ ۸ ارتقا یافته‌اند،
+         * اما snapshot ماندهٔ افتتاحیه‌شان هنوز با دفتر کل هم‌راستا نشده است.
+         */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                reconcileOpeningBalanceSnapshots(db)
+            }
+        }
+
+        private fun reconcileOpeningBalanceSnapshots(db: SupportSQLiteDatabase) {
+            val openingCurrent = """
+                (SELECT COALESCE(SUM(CASE WHEN direction = 'DEBIT' THEN amountRial ELSE -amountRial END), 0)
+                 FROM ledger_entries
+                 WHERE customerId = invoices.customerId
+                   AND refType = 'OPENING_BALANCE')
+            """.trimIndent()
+            val openingDelta = "$openingCurrent - openingBalanceSnapshotRial"
+            // Keep legacy zero sentinels usable by rebuilding their prior total first.
+            db.execSQL(
+                "UPDATE invoices SET balanceAfterRial = " +
+                    "(CASE WHEN balanceAfterRial != 0 THEN balanceAfterRial ELSE prevBalanceRial + totalRial END) + ($openingDelta)"
+            )
+            db.execSQL("UPDATE invoices SET prevBalanceRial = prevBalanceRial + ($openingDelta)")
+            db.execSQL("UPDATE invoices SET openingBalanceSnapshotRial = $openingCurrent")
         }
 
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "cmb-ledger.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 .build()
     }
 }

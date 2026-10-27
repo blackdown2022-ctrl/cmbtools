@@ -32,16 +32,17 @@ class BankSmsReceiver : BroadcastReceiver() {
             val time = parts.firstOrNull()?.timestampMillis ?: System.currentTimeMillis()
             scope.launch {
                 runCatching {
-                    val result = app.container.matcher.handle(sender, body, time)
-                    if (result != PaymentMatcher.Result.Duplicate) {
-                        val command = app.container.renewalSmsCommandProcessor.handle(sender, body)
-                        if (command != null) {
+                    val command = app.container.adminSmsCommandProcessor.handle(sender, body, time)
+                    if (command != null) {
+                        if (!command.duplicate) {
                             app.notifications.show(
-                                if (command.success) "تمدید پیامکی انجام شد" else "فرمان تمدید پیامکی ناموفق بود",
+                                if (command.success) "فرمان پیامکی انجام شد" else "فرمان پیامکی ناموفق بود",
                                 command.message
                             )
                         }
+                        return@launch
                     }
+                    val result = app.container.matcher.handle(sender, body, time)
                     notifyUser(context, app, result)
                 }
             }

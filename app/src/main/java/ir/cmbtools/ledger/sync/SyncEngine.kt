@@ -230,17 +230,32 @@ class SyncEngine(
                 val shouldInvoiceRenew = renewed && settings.autoInvoiceOnRenew &&
                     newExpire != lastInvoicedExpire
 
+                // گزارش تمدید مستقل از روشن/خاموش بودن صدور فاکتور خودکار است.
+                // در مسیر فاکتور، AutoBilling همین گزارش را بعد از تلاش صدور می‌فرستد.
+                if (renewed && !settings.autoInvoiceOnRenew) {
+                    sendDetectedRenewalReport(customerId, u.name, u.usageLimitGb, u.packageDays)
+                        ?.let { problems += "${u.name}: گزارش تمدید ارسال نشد: $it" }
+                }
+
                 if (shouldInvoiceNew || shouldInvoiceRenew) {
                     // ۱) مشتری: پیش‌تر در همین دور حل/ساخته شده است
                     if (customerId <= 0) {
                         skipped++
                         if (!ambiguousName) problems += "${u.name}: مشتری متناظر پیدا نشد"
+                        if (shouldInvoiceRenew) {
+                            sendDetectedRenewalReport(customerId, u.name, u.usageLimitGb, u.packageDays)
+                                ?.let { problems += "${u.name}: گزارش تمدید ارسال نشد: $it" }
+                        }
                     } else {
                         // ۲) قیمت: بستهٔ تعریف‌شده یا قیمت هر گیگ
                         val priced = runCatching { billing.priceFor(u.usageLimitGb, u.packageDays) }.getOrNull()
                         if (priced == null) {
                             skipped++
                             problems += "${u.name}: بستهٔ ${formatGb(u.usageLimitGb)} گیگ / ${u.packageDays} روز قیمت‌گذاری نشده"
+                            if (shouldInvoiceRenew) {
+                                sendDetectedRenewalReport(customerId, u.name, u.usageLimitGb, u.packageDays)
+                                    ?.let { problems += "${u.name}: گزارش تمدید ارسال نشد: $it" }
+                            }
                         } else {
                             val subUrl = client.subscriptionUrl(u.uuid, linkBase)
                             val result = runCatching {
@@ -364,6 +379,23 @@ class SyncEngine(
         val phoneFromName = billing.extractPhone(name)
         if (phoneFromName.isNotBlank()) billing.findCustomerByPhone(phoneFromName)?.let { return it.id }
         return 0
+    }
+
+    private suspend fun sendDetectedRenewalReport(
+        customerId: Long,
+        customerName: String,
+        gb: Double,
+        days: Int
+    ): String? {
+        val packageName = runCatching { billing.priceFor(gb, days)?.name.orEmpty() }.getOrDefault("")
+        val sent = billing.sendRenewalReport(
+            customerId = customerId,
+            packageName = packageName,
+            gb = gb,
+            days = days,
+            customerNameFallback = customerName
+        )
+        return sent?.takeIf { !it.ok }?.message
     }
 
     private fun formatGb(gb: Double): String =

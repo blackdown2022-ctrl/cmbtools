@@ -432,6 +432,22 @@ class InvoiceTemplateTest {
     }
 
     @Test
+    fun includes_previous_debt_when_a_custom_template_omits_all_balance_placeholders() {
+        val customSettings = AppSettings().copy(
+            invoiceTemplate = "{customer}\nمبلغ: {total}\n{footer}"
+        )
+        val body = SmsTemplate.render(
+            customSettings,
+            invoice(prevBalance = 800_000, balanceAfter = 2_300_000),
+            customer,
+            emptyList(),
+            ""
+        )
+        assertTrue(body.contains("مانده قبلی: ۸۰۰٬۰۰۰ ریال"))
+        assertTrue(body.contains("جمع کل بدهی: ۲٬۳۰۰٬۰۰۰ ریال"))
+    }
+
+    @Test
     fun drops_empty_lines_instead_of_leaving_labels() {
         val body = SmsTemplate.render(
             AppSettings(),

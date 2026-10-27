@@ -65,7 +65,22 @@ object SmsTemplate {
         val card = invoice.cardNumber.ifBlank { settings.paymentCardNumber }
         val cardLine = if (card.isBlank()) "" else card
 
-        return settings.invoiceTemplate
+        // Custom templates created before balance placeholders existed may contain only {total}.
+        // In that case, do not silently hide an opening balance that is already in the ledger.
+        val templateSource = settings.invoiceTemplate
+        val hasBalancePlaceholder = listOf("{debt}", "{prevBalance}", "{totalDebt}")
+            .any { placeholder -> templateSource.contains(placeholder) }
+        val template = if (hasPrevDebt && !hasBalancePlaceholder) {
+            if (templateSource.contains("{footer}")) {
+                templateSource.replace("{footer}", "{debt}{footer}")
+            } else {
+                "$templateSource\n{debt}"
+            }
+        } else {
+            templateSource
+        }
+
+        return template
             // نام فروشگاه عمداً درج نمی‌شود (خواستهٔ کاربر: پیامک با نام مشتری شروع شود).
             // متغیر برای سازگاری با قالب‌های قدیمی نگه داشته شده ولی خالی جایگزین می‌شود.
             .replace("{business}", "")

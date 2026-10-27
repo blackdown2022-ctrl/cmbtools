@@ -174,7 +174,8 @@ class SyncEngine(
 
         for (u in users) {
             val old = known[u.uuid]
-            val resolvedCustomerId = resolveCustomerId(u.comment, u.name)
+            val panelName = PanelCustomerNames.discountSuffix(u.name)
+            val resolvedCustomerId = resolveCustomerId(u.comment, panelName.customerName)
             val ambiguousName = resolvedCustomerId <= 0 && billing.exactNameMatches(u.name).size > 1
             var customerId = PanelCustomerNames.chooseCustomerId(
                 resolvedId = resolvedCustomerId,
@@ -187,7 +188,7 @@ class SyncEngine(
             // ساخته می‌شود — حتی وقتی فاکتور خودکار خاموش است. قبلاً فقط داخل مسیر
             // صدور فاکتور ساخته می‌شد و کاربر نتیجه می‌گرفت «همگام‌سازی چیزی نمی‌سازد».
             if (customerId <= 0 && settings.autoCreateCustomerFromPanel) {
-                val made = runCatching { billing.resolveOrCreateCustomer(u.name, u.comment) }.getOrNull()
+                val made = runCatching { billing.resolveOrCreateCustomer(panelName.customerName, u.comment) }.getOrNull()
                 if (made != null) {
                     customerId = made.id
                     createdCustomers++
@@ -259,6 +260,9 @@ class SyncEngine(
                         } else {
                             val subUrl = client.subscriptionUrl(u.uuid, linkBase)
                             val result = runCatching {
+                                if (shouldInvoiceNew && panelName.hasSuffix && panelName.discountRial == null) {
+                                    error("پسوند تخفیف پس از / نامعتبر یا بیش از حد بزرگ است؛ فاکتور بدون تخفیف صادر نشد")
+                                }
                                 if (shouldInvoiceRenew) {
                                     billing.invoiceRenewal(
                                         customerId = customerId,
@@ -279,7 +283,8 @@ class SyncEngine(
                                         days = u.packageDays,
                                         packageName = priced.name,
                                         priceRial = priced.priceRial,
-                                        planId = priced.planId
+                                        planId = priced.planId,
+                                        discountRial = if (shouldInvoiceNew) panelName.discountRial ?: 0L else 0L
                                     )
                                 }
                             }.getOrElse { e ->
@@ -295,6 +300,8 @@ class SyncEngine(
                             } else if (result != null) {
                                 skipped++
                                 problems += "${u.name}: ${result.message}"
+                            } else {
+                                skipped++
                             }
                         }
                     }

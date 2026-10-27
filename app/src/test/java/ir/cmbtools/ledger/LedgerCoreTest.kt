@@ -375,6 +375,7 @@ class InvoiceTemplateTest {
         prevBalance: Long = 0,
         balanceAfter: Long = 0,
         total: Long = 1_500_000,
+        discount: Long = 0,
         card: String = "6037-9977-1234-5678",
         pkg: String = "یک‌ماهه ۳۰ گیگ",
         kind: String = InvoiceKind.RENEW
@@ -384,7 +385,8 @@ class InvoiceTemplateTest {
         customerId = 1,
         issuedAtEpochDay = LocalDate.of(2026, 10, 25).toEpochDay(),
         totalRial = total,
-        subtotalRial = total,
+        subtotalRial = total + discount,
+        discountRial = discount,
         packageName = pkg,
         cardNumber = card,
         prevBalanceRial = prevBalance,
@@ -448,6 +450,42 @@ class InvoiceTemplateTest {
     }
 
     @Test
+    fun includes_discount_in_sms_and_deducts_it_from_total() {
+        val body = SmsTemplate.render(
+            AppSettings(),
+            invoice(total = 1_000_000, discount = 500_000),
+            customer,
+            emptyList(),
+            ""
+        )
+        assertTrue(body.contains("مبلغ: ۱٬۰۰۰٬۰۰۰ ریال"))
+        assertTrue(body.contains("تخفیف: ۵۰۰٬۰۰۰ ریال"))
+    }
+
+    @Test
+    fun adds_discount_to_legacy_custom_template_but_does_not_duplicate_placeholder() {
+        val legacy = AppSettings().copy(invoiceTemplate = "{customer}\nمبلغ: {total}\n{footer}")
+        val body = SmsTemplate.render(
+            legacy,
+            invoice(total = 1_000_000, discount = 500_000),
+            customer,
+            emptyList(),
+            ""
+        )
+        assertEquals(1, Regex("تخفیف:").findAll(body).count())
+
+        val custom = legacy.copy(invoiceTemplate = "{customer}\nتخفیف: {discount}\nمبلغ: {total}")
+        val bodyWithPlaceholder = SmsTemplate.render(
+            custom,
+            invoice(total = 1_000_000, discount = 500_000),
+            customer,
+            emptyList(),
+            ""
+        )
+        assertEquals(1, Regex("تخفیف:").findAll(bodyWithPlaceholder).count())
+    }
+
+    @Test
     fun drops_empty_lines_instead_of_leaving_labels() {
         val body = SmsTemplate.render(
             AppSettings(),
@@ -462,7 +500,7 @@ class InvoiceTemplateTest {
     @Test
     fun defaults_to_structured_template() {
         val t = AppSettings.DEFAULT_INVOICE_TEMPLATE
-        listOf("{customer}", "{invoiceNo}", "{datetime}", "{package}", "{total}", "{debt}", "{card}")
+        listOf("{customer}", "{invoiceNo}", "{datetime}", "{package}", "{total}", "{discount}", "{debt}", "{card}")
             .forEach { assertTrue("قالب پیش‌فرض باید $it را داشته باشد", t.contains(it)) }
         // نام فروشگاه و لینک اشتراک از قالب حذف شده‌اند
         assertFalse(t.contains("{business}"))
@@ -955,6 +993,24 @@ class PanelCustomerNamesTest {
         )
         assertEquals(listOf(2L), ids)
         assertEquals("رضا-عباسی", ir.cmbtools.ledger.core.PanelCustomerNames.cleanLegacyPanelName("رضا-عباسی"))
+    }
+
+    @Test
+    fun panel_name_slash_suffix_is_a_ten_thousand_rial_discount_and_not_part_of_customer_name() {
+        val matcher = ir.cmbtools.ledger.core.PanelCustomerNames
+        val parsed = matcher.discountSuffix("علی رضایی 09121234567/۵۰")
+        assertEquals("علی رضایی 09121234567", parsed.customerName)
+        assertEquals(500_000L, parsed.discountRial)
+        assertTrue(parsed.hasSuffix)
+        assertEquals(listOf(7L), matcher.exactMatchIds("علی رضایی/50", listOf(7L to "علی رضایی")))
+    }
+
+    @Test
+    fun panel_discount_suffix_overflow_is_detected_instead_of_wrapping() {
+        val parsed = ir.cmbtools.ledger.core.PanelCustomerNames.discountSuffix("علی/999999999999999999")
+        assertTrue(parsed.hasSuffix)
+        assertNull(parsed.discountRial)
+        assertEquals("علی", parsed.customerName)
     }
 
     @Test

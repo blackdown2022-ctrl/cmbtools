@@ -15,7 +15,7 @@ data class NewInvoiceLine(
     val unitPriceRial: Long,
     val planId: Long = 0
 ) {
-    val amountRial: Long get() = unitPriceRial * qty.coerceAtLeast(1)
+    val amountRial: Long get() = Math.multiplyExact(unitPriceRial, qty.coerceAtLeast(1).toLong())
 }
 
 class InvoiceRepository(
@@ -143,6 +143,76 @@ class InvoiceRepository(
             )
         )
         invoiceId
+    }
+
+    /**
+     * ویرایش ردیف‌ها و تخفیف فاکتور صادرشده، همراه با ثبت اختلاف در دفتر کل.
+     * پرداخت‌های ثبت‌شده حفظ می‌شوند و اجازهٔ کم‌کردن فاکتور به کمتر از مبلغ پرداختی داده نمی‌شود.
+     * فراخواننده باید این عملیات را داخل تراکنش Room اجرا کند.
+     */
+    suspend fun updateDetails(
+        invoiceId: Long,
+        lines: List<NewInvoiceLine>,
+        discountRial: Long,
+        note: String
+    ) {
+        val invoice = invoices.byId(invoiceId) ?: error("فاکتور پیدا نشد")
+        require(invoice.status != InvoiceStatus.VOID) { "فاکتور باطل‌شده قابل ویرایش نیست" }
+        val cleanLines = lines.filter { it.description.isNotBlank() && it.unitPriceRial > 0 && it.qty > 0 }
+        require(cleanLines.isNotEmpty()) { "حداقل یک ردیف معتبر لازم است" }
+
+        val subtotal = cleanLines.sumOf { it.amountRial }
+        val discount = discountRial.coerceIn(0, subtotal)
+        val total = subtotal - discount
+        val paid = allocationsPaid(invoiceId)
+        require(total >= paid) { "مبلغ نهایی فاکتور نمی‌تواند از مبلغ پرداخت‌شده کمتر باشد (${paid} ریال)" }
+
+        val updated = invoice.copy(
+            subtotalRial = subtotal,
+            discountRial = discount,
+            totalRial = total,
+            paidRial = paid,
+            status = statusFor(invoice, paid),
+            note = note,
+            balanceAfterRial = ir.cmbtools.ledger.core.Money.safeSum(invoice.prevBalanceRial, total)
+        )
+        invoices.update(updated)
+        invoices.deleteLines(invoiceId)
+        invoices.insertLines(cleanLines.map { line ->
+            InvoiceLine(
+                invoiceId = invoiceId,
+                planId = line.planId,
+                description = line.description.trim(),
+                qty = line.qty,
+                unitPriceRial = line.unitPriceRial,
+                amountRial = line.amountRial
+            )
+        })
+
+        val difference = total - invoice.totalRial
+        if (difference != 0L) {
+            // تاریخچهٔ ماندهٔ فاکتورهای بعدی را هم با اصلاح قبلی هم‌راستا نگه می‌داریم.
+            invoices.laterForCustomer(invoice.customerId, invoice.issuedAtEpochDay, invoice.id).forEach { later ->
+                invoices.update(
+                    later.copy(
+                        prevBalanceRial = ir.cmbtools.ledger.core.Money.safeSum(later.prevBalanceRial, difference),
+                        balanceAfterRial = ir.cmbtools.ledger.core.Money.safeSum(later.balanceAfterRial, difference)
+                    )
+                )
+            }
+            ledger.insert(
+                LedgerEntry(
+                    customerId = invoice.customerId,
+                    atEpochDay = LocalDate.now().toEpochDay(),
+                    direction = if (difference > 0) LedgerDirection.DEBIT else LedgerDirection.CREDIT,
+                    amountRial = kotlin.math.abs(difference),
+                    account = LedgerAccount.RECEIVABLE,
+                    refType = "INVOICE_EDIT",
+                    refId = invoiceId,
+                    memo = "اصلاح مبلغ فاکتور ${invoice.number}"
+                )
+            )
+        }
     }
 
     suspend fun recollectTotals(invoiceId: Long) {

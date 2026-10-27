@@ -70,14 +70,23 @@ object SmsTemplate {
         val templateSource = settings.invoiceTemplate
         val hasBalancePlaceholder = listOf("{debt}", "{prevBalance}", "{totalDebt}")
             .any { placeholder -> templateSource.contains(placeholder) }
-        val template = if (hasPrevDebt && !hasBalancePlaceholder) {
+        val hasDiscountPlaceholder = templateSource.contains("{discount}")
+        var template = if (invoice.discountRial > 0 && !hasDiscountPlaceholder) {
+            val discountLine = "تخفیف: {discount}\n"
             if (templateSource.contains("{footer}")) {
-                templateSource.replace("{footer}", "{debt}{footer}")
+                templateSource.replace("{footer}", discountLine + "{footer}")
             } else {
-                "$templateSource\n{debt}"
+                "$templateSource\n$discountLine"
             }
         } else {
             templateSource
+        }
+        if (hasPrevDebt && !hasBalancePlaceholder) {
+            template = if (template.contains("{footer}")) {
+                template.replace("{footer}", "{debt}{footer}")
+            } else {
+                "$template\n{debt}"
+            }
         }
 
         return template
@@ -87,6 +96,7 @@ object SmsTemplate {
             .replace("{invoiceNo}", Money.toPersian(invoice.number))
             .replace("{customer}", customer.name)
             .replace("{total}", amountText)
+            .replace("{discount}", if (invoice.discountRial > 0) Money.format(invoice.discountRial) else "")
             .replace("{items}", items)
             .replace("{package}", packageName)
             .replace("{kind}", InvoiceKind.label(invoice.kind))
@@ -115,7 +125,8 @@ object SmsTemplate {
             number = "42",
             customerId = 0,
             issuedAtEpochDay = java.time.LocalDate.now().toEpochDay(),
-            subtotalRial = 1_500_000,
+            subtotalRial = 1_700_000,
+            discountRial = 200_000,
             totalRial = 1_500_000,
             packageName = "یک‌ماهه ۳۰ گیگ",
             cardNumber = settings.paymentCardNumber.ifBlank { "6037-9977-1234-5678" },

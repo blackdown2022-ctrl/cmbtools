@@ -4,8 +4,27 @@ import java.util.Locale
 
 /** نام پنل را فقط با نام کامل مشتری تطبیق می‌دهد؛ هرگز بر اساس پیشوند/نام کوچک حدس نمی‌زند. */
 object PanelCustomerNames {
-    /** پسوندی که نسخه‌های قدیمی برنامه به نام پنل اضافه می‌کردند را فقط در قالب شناخته‌شده حذف می‌کند. */
-    fun cleanLegacyPanelName(raw: String): String = raw.trim().replace(
+    data class DiscountSuffix(
+        val customerName: String,
+        /** تخفیف بر حسب ریال؛ null یعنی پسوند عددی نامعتبر/سرریز کرده است. */
+        val discountRial: Long?,
+        val hasSuffix: Boolean
+    )
+
+    /**
+     * پسوند اختیاری `/عدد` در انتهای نام پنل را تخفیف می‌داند؛ عدد بر حسب واحدهای
+     * ۱۰٬۰۰۰ ریالی است (مثلاً `/50` یعنی ۵۰۰٬۰۰۰ ریال). ارقام فارسی و عربی هم پذیرفته‌اند.
+     */
+    fun discountSuffix(raw: String): DiscountSuffix {
+        val match = Regex("""/([0-9۰-۹٠-٩]+)\s*$""").find(raw.trim())
+            ?: return DiscountSuffix(raw.trim(), 0L, false)
+        val units = Money.toLatinDigits(match.groupValues[1]).toLongOrNull()
+        val rial = units?.let { runCatching { Math.multiplyExact(it, 10_000L) }.getOrNull() }
+        return DiscountSuffix(raw.trim().substring(0, match.range.first).trimEnd(), rial, true)
+    }
+
+    /** پسوندهای شناخته‌شدهٔ تخفیف و نسخه‌های قدیمی اپ را از نام تطبیقی حذف می‌کند. */
+    fun cleanLegacyPanelName(raw: String): String = discountSuffix(raw).customerName.replace(
         Regex("""\s+\d{4}-\d{4}(?:\s+-\s+.+)?$"""),
         ""
     ).trim()

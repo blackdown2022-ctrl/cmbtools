@@ -497,11 +497,10 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     checked = settings.autoInvoiceOnNewAccount,
                     onChange = { v -> vm.updateSettings { it.copy(autoInvoiceOnNewAccount = v) } }
                 )
-                SwitchLine(
-                    title = "فاکتور خودکار برای تمدید",
-                    hint = "وقتی تاریخ انقضای اکانت جلو می‌رود",
-                    checked = settings.autoInvoiceOnRenew,
-                    onChange = { v -> vm.updateSettings { it.copy(autoInvoiceOnRenew = v) } }
+                Text(
+                    "پس از همگام‌سازی، با ریست حجم یا شروع دوبارهٔ دورهٔ زمانی، فاکتور تمدید خودکار صادر می‌شود.",
+                    color = PrimaryCyan,
+                    style = MaterialTheme.typography.labelMedium
                 )
                 SwitchLine(
                     title = "ارسال فوری پیامک فاکتور",

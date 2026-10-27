@@ -121,6 +121,7 @@ class PanelService(
                 name = user.name,
                 gb = gb,
                 days = days,
+                remainingDays = user.remainingDaysOrComputed,
                 startEpochDay = PanelClient.parseEpochDay(user.startDate),
                 expireEpochDay = user.expireEpochDay,
                 usageGb = user.currentUsageGb,
@@ -138,6 +139,13 @@ class PanelService(
             expireEpochDay = user.expireEpochDay,
             expireInDays = user.remainingDaysOrComputed
         )
+    }
+
+    /** Mark the detected panel renewal as billed after its invoice is successfully saved. */
+    suspend fun markRenewalInvoiced(uuid: String) {
+        val account = panelDao.byPanelUuid(uuid) ?: return
+        if (account.lastRenewedAtMillis <= account.lastInvoicedRenewalAtMillis) return
+        panelDao.upsertAccount(account.copy(lastInvoicedRenewalAtMillis = account.lastRenewedAtMillis))
     }
 
     suspend fun setAutoRenew(uuid: String, enabled: Boolean) {
@@ -191,6 +199,7 @@ class PanelService(
                 name = user.name,
                 gb = gb,
                 days = days,
+                remainingDays = user.remainingDaysOrComputed,
                 startEpochDay = PanelClient.parseEpochDay(user.startDate),
                 expireEpochDay = user.expireEpochDay,
                 usageGb = user.currentUsageGb,
@@ -201,6 +210,7 @@ class PanelService(
                 // فاکتور تمدید پیش از فراخوانی این متد صادر شده است
                 lastInvoicedExpireEpochDay = user.expireEpochDay,
                 lastRenewedAtMillis = now,
+                lastInvoicedRenewalAtMillis = existing?.lastInvoicedRenewalAtMillis ?: 0L,
                 autoRenewEnabled = existing?.autoRenewEnabled ?: false
             )
         )

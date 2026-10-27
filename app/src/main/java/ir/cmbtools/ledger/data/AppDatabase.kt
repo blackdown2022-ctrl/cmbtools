@@ -24,7 +24,7 @@ import ir.cmbtools.ledger.core.InvoiceNumbering
         BankSms::class,
         SmsOutbox::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -176,6 +176,18 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * ۹ → ۱۰: ثبت زمان آخرین فاکتور تمدید موفق. رویدادهای قدیمی خط پایه می‌شوند تا
+         * ارتقا باعث صدور دوبارهٔ فاکتور تمدیدهای تاریخی نشود؛ رویدادهای جدید در sync قابل retry هستند.
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE panel_accounts ADD COLUMN remainingDays INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE panel_accounts ADD COLUMN lastInvoicedRenewalAtMillis INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE panel_accounts SET lastInvoicedRenewalAtMillis = lastRenewedAtMillis")
+            }
+        }
+
         private fun reconcileOpeningBalanceSnapshots(db: SupportSQLiteDatabase) {
             val openingCurrent = """
                 (SELECT COALESCE(SUM(CASE WHEN direction = 'DEBIT' THEN amountRial ELSE -amountRial END), 0)
@@ -195,7 +207,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "cmb-ledger.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                 .build()
     }
 }

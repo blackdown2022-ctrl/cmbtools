@@ -24,9 +24,9 @@ object PanelCustomerNames {
     }
 
     /**
-     * Decide whether this panel account should receive its one-time initial invoice.
-     * A discount suffix is an explicit billing signal, so it can be honored on the first
-     * baseline sync too; ordinary pre-existing accounts are still never bulk-invoiced.
+     * Decide whether an explicit discount suffix may trigger the one-time initial invoice.
+     * Existing customers are not bulk-invoiced, but a suffix is an explicit per-account
+     * billing instruction and can recover an account whose first invoice was missed.
      */
     fun shouldInvoiceInitialAccount(
         autoInvoiceEnabled: Boolean,
@@ -34,10 +34,9 @@ object PanelCustomerNames {
         wasKnownBefore: Boolean,
         alreadyHasInvoice: Boolean,
         hasDiscountSuffix: Boolean
-    ): Boolean = autoInvoiceEnabled &&
-        !alreadyHasInvoice &&
-        !wasKnownBefore &&
-        (!firstSync || hasDiscountSuffix)
+    ): Boolean = !alreadyHasInvoice && (
+        hasDiscountSuffix || (autoInvoiceEnabled && !firstSync && !wasKnownBefore)
+    )
 
     /** پسوندهای شناخته‌شدهٔ تخفیف و نسخه‌های قدیمی اپ را از نام تطبیقی حذف می‌کند. */
     fun cleanLegacyPanelName(raw: String): String = discountSuffix(raw).customerName.replace(

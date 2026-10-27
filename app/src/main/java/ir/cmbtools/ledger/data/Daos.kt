@@ -122,9 +122,9 @@ interface InvoiceDao {
     @Query("SELECT * FROM invoices WHERE issuedAtEpochDay BETWEEN :from AND :to AND status != 'VOID'")
     suspend fun between(from: Long, to: Long): List<Invoice>
 
-    /** آیا برای این اکانت پنل قبلاً فاکتور صادر شده است؟ (ضد فاکتور تکراری) */
-    @Query("SELECT COUNT(*) FROM invoices WHERE panelUserUuid = :uuid AND status != 'VOID'")
-    suspend fun countForPanelUser(uuid: String): Int
+    /** فاکتور اولیهٔ اکانت؛ فاکتور تمدید نباید مانع صدور/اصلاح فاکتور اولیه شود. */
+    @Query("SELECT * FROM invoices WHERE panelUserUuid = :uuid AND kind = 'NEW' AND status != 'VOID' ORDER BY id ASC LIMIT 1")
+    suspend fun firstInitialForPanelUser(uuid: String): Invoice?
 
     /** آخرین فاکتور یک اکانت پنل */
     @Query("SELECT * FROM invoices WHERE panelUserUuid = :uuid AND status != 'VOID' ORDER BY id DESC LIMIT 1")

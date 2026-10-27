@@ -1,5 +1,6 @@
 package ir.cmbtools.ledger.data
 
+import androidx.room.withTransaction
 import ir.cmbtools.ledger.core.InvoiceKind
 import ir.cmbtools.ledger.core.InvoiceStatus
 import ir.cmbtools.ledger.core.LedgerAccount
@@ -22,7 +23,8 @@ class InvoiceRepository(
     private val invoices: InvoiceDao,
     private val ledger: LedgerDao,
     private val payments: PaymentDao,
-    private val invoiceNumbers: InvoiceNumberCounterDao
+    private val invoiceNumbers: InvoiceNumberCounterDao,
+    private val db: AppDatabase
 ) {
     private val numberMutex = Mutex()
 
@@ -272,9 +274,41 @@ class InvoiceRepository(
     suspend fun between(from: LocalDate, to: LocalDate): List<Invoice> =
         invoices.between(from.toEpochDay(), to.toEpochDay())
 
-    /** آیا برای این اکانت پنل فاکتوری صادر شده است؟ (ضد تکرار) */
-    suspend fun hasInvoicesForPanelUser(uuid: String): Boolean =
-        uuid.isNotBlank() && invoices.countForPanelUser(uuid) > 0
+    /** فاکتور اولیهٔ اکانت پنل، اگر قبلاً ثبت شده باشد. */
+    suspend fun initialInvoiceForPanelUser(uuid: String): Invoice? =
+        if (uuid.isBlank()) null else invoices.firstInitialForPanelUser(uuid)
+
+    suspend fun hasInitialInvoiceForPanelUser(uuid: String): Boolean =
+        initialInvoiceForPanelUser(uuid) != null
+
+    /**
+     * ترمیم تخفیف فاکتور اولیهٔ متصل به نام پنل. عملیات اتمیک است؛ پرداخت‌های قبلی حفظ
+     * می‌شوند و اگر تخفیف جدید مبلغ فاکتور را از مبلغ پرداخت‌شده کمتر کند، تغییری نمی‌دهد.
+     */
+    suspend fun applyPanelInitialDiscount(invoiceId: Long, requestedDiscountRial: Long): Invoice? =
+        db.withTransaction {
+            val invoice = invoices.byId(invoiceId) ?: return@withTransaction null
+            if (invoice.kind != InvoiceKind.NEW || invoice.status == InvoiceStatus.VOID) {
+                return@withTransaction invoice
+            }
+            val lines = invoices.lines(invoiceId)
+            val discount = requestedDiscountRial.coerceIn(0L, invoice.subtotalRial)
+            if (discount <= invoice.discountRial) return@withTransaction invoice
+            updateDetails(
+                invoiceId = invoiceId,
+                lines = lines.map { line ->
+                    NewInvoiceLine(
+                        description = line.description,
+                        qty = line.qty,
+                        unitPriceRial = line.unitPriceRial,
+                        planId = line.planId
+                    )
+                },
+                discountRial = discount,
+                note = invoice.note
+            )
+            invoices.byId(invoiceId)
+        }
 
     suspend fun lastForPanelUser(uuid: String): Invoice? =
         if (uuid.isBlank()) null else invoices.lastForPanelUser(uuid)

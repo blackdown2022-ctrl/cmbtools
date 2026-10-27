@@ -71,12 +71,44 @@ jobs:
           key: gradle-v2-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts') }}
           restore-keys: gradle-v2-${{ runner.os }}-
 
-      # گواهی ثابت نگه داشته می‌شود تا APK غیرقابل‌دیباگ نسخهٔ جدید روی قبلی نصب شود.
-      - name: کش گواهی ثابت امضای APK
-        uses: actions/cache@v4
+      # گواهی انتشار مستقل از کلید debug و فقط از کش شاخهٔ main بازیابی می‌شود.
+      - name: بازیابی کلید ثابت امضای انتشار
+        id: release-keystore
+        uses: actions/cache/restore@v4
         with:
-          path: ~/.android/debug.keystore
-          key: android-debug-keystore-v1
+          path: ${{ runner.temp }}/cmbtools-release.p12
+          key: cmbtools-release-keystore-v1
+
+      - name: آماده‌سازی کلید ثابت امضای انتشار
+        env:
+          APP_VERSION_CODE: ${{ steps.ver.outputs.code }}
+          RELEASE_STORE_PASSWORD: cmbtools-release-2026-stable
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/cmbtools-release.p12"
+          if [ ! -s "$KEYSTORE" ]; then
+            if [ "$GITHUB_REF" = "refs/heads/main" ] && [ "$APP_VERSION_CODE" -gt 31 ]; then
+              echo "e: کلید ثابت امضا پیدا نشد؛ انتشار متوقف شد تا APK با کلید تازه منتشر نشود"
+              exit 1
+            fi
+            keytool -genkeypair -noprompt -keystore "$KEYSTORE" -storetype PKCS12 \
+              -storepass "$RELEASE_STORE_PASSWORD" -keypass "$RELEASE_STORE_PASSWORD" \
+              -alias cmbtools-release -keyalg RSA -keysize 3072 -validity 36500 \
+              -dname "CN=CMBTools Android Release,O=CMBTools"
+          fi
+          {
+            echo "ANDROID_RELEASE_KEYSTORE_PATH=$KEYSTORE"
+            echo "ANDROID_RELEASE_STORE_PASSWORD=$RELEASE_STORE_PASSWORD"
+            echo "ANDROID_RELEASE_KEY_ALIAS=cmbtools-release"
+            echo "ANDROID_RELEASE_KEY_PASSWORD=$RELEASE_STORE_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: ذخیره کلید ثابت امضای انتشار
+        if: steps.release-keystore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/cmbtools-release.p12
+          key: cmbtools-release-keystore-v1
 
       - name: اجرایی کردن gradlew
         run: chmod +x ./gradlew
@@ -108,6 +140,29 @@ jobs:
         run: |
           set -o pipefail
           ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+
+      - name: بررسی ثبات گواهی امضای APK
+        env:
+          RELEASE_STORE_PASSWORD: cmbtools-release-2026-stable
+          RELEASE_KEY_ALIAS: cmbtools-release
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          APKSIGNER="$SDK/build-tools/34.0.0/apksigner"
+          APK=app/build/outputs/apk/release/app-release.apk
+          KEYSTORE="$RUNNER_TEMP/cmbtools-release.p12"
+          expected=$(keytool -exportcert -alias "$RELEASE_KEY_ALIAS" -keystore "$KEYSTORE" \
+            -storetype PKCS12 -storepass "$RELEASE_STORE_PASSWORD" | sha256sum | awk '{print $1}')
+          actual=$("$APKSIGNER" verify --print-certs "$APK" \
+            | sed -n 's/^Signer #[0-9][0-9]* certificate SHA-256 digest: //p' \
+            | tr -d ':' | tr '[:upper:]' '[:lower:]' | sort | paste -sd ',' -)
+          echo "گواهی مورد انتظار: $expected"
+          echo "گواهی APK ساخته‌شده: $actual"
+          if [ "$actual" != "$expected" ]; then
+            echo "e: APK با کلید ثابت انتشار امضا نشده است" | tee -a build.log
+            exit 1
+          fi
+          echo "گواهی APK با کلید پایدار انتشار یکسان است."
 
       - name: بررسی ایمنی برنامه (Lint)
         id: lint
@@ -171,19 +226,22 @@ jobs:
           fi
 
       - name: انتشار APK در Releases (لینک دانلود ساده)
-        if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/heads/arena/'))
+        if: success() && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.ver.outputs.name }}"
           CODE="${{ steps.ver.outputs.code }}"
           cp app/build/outputs/apk/release/app-release.apk "tiznet-${VERSION}.apk"
+          if [ "$CODE" -eq 31 ]; then
+            NOTES="نسخهٔ انتقال به امضای پایدار APK. برای نصب این نسخه، یک‌بار برنامهٔ قبلی را حذف کنید؛ سپس APK را نصب و بکاپ را بازیابی کنید. نسخه‌های بعدی روی همین نسخه نصب می‌شوند."
+          else
+            NOTES="نسخهٔ ${VERSION} با امضای پایدار؛ روی نسخهٔ قبلی نصب می‌شود و داده‌ها حفظ می‌شوند. برای احتیاط قبل از به‌روزرسانی از گزارش‌ها → پشتیبان کامل یک فایل JSON بگیرید."
+          fi
           gh release create "v${VERSION}-${GITHUB_RUN_NUMBER}" \
             "tiznet-${VERSION}.apk" \
             --title "تیزنت نسخهٔ ${VERSION} (کد ${CODE} — ساخت ${GITHUB_RUN_NUMBER})" \
-            --notes "نسخهٔ ${VERSION} (versionCode ${CODE}) از شاخهٔ ${GITHUB_REF_NAME}.
-          فایل tiznet-${VERSION}.apk را روی گوشی نصب کنید؛ روی نسخهٔ قبلی نصب می‌شود و داده حفظ می‌شود.
-          قبل از آپدیت، از گزارش‌ها → پشتیبان کامل یک فایل JSON بگیرید." \
+            --notes "$NOTES" \
             --latest || true
 
       - name: آپلود گزارش تست‌ها

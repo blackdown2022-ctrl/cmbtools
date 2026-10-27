@@ -109,6 +109,45 @@ jobs:
           set -o pipefail
           ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
 
+      - name: تطبیق گواهی امضای APK با نسخه‌های منتشرشده
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          APKSIGNER="$SDK/build-tools/34.0.0/apksigner"
+          CURRENT_APK=app/build/outputs/apk/release/app-release.apk
+          TMP_DIR=$(mktemp -d)
+          fingerprint() {
+            "$APKSIGNER" verify --print-certs "$1" \
+              | sed -n 's/^Signer #[0-9][0-9]* certificate SHA-256 digest: //p' \
+              | tr -d ':' | sort | paste -sd ',' -
+          }
+          {
+            current_fingerprint=$(fingerprint "$CURRENT_APK")
+            if [ -z "$current_fingerprint" ]; then
+              echo "e: نتوانستم گواهی امضای APK جدید را بخوانم"
+              exit 1
+            fi
+            echo "گواهی APK جدید: $current_fingerprint"
+            for tag in v0.12.7-89 v0.12.8-91; do
+              mkdir -p "$TMP_DIR/$tag"
+              gh release download "$tag" --pattern '*.apk' --dir "$TMP_DIR/$tag"
+              previous_apk=$(find "$TMP_DIR/$tag" -maxdepth 1 -name '*.apk' -print -quit)
+              if [ -z "$previous_apk" ]; then
+                echo "e: APK نسخهٔ $tag برای بررسی امضا پیدا نشد"
+                exit 1
+              fi
+              previous_fingerprint=$(fingerprint "$previous_apk")
+              echo "گواهی $tag: $previous_fingerprint"
+              if [ -z "$previous_fingerprint" ] || [ "$current_fingerprint" != "$previous_fingerprint" ]; then
+                echo "e: امضای APK جدید با $tag یکی نیست؛ برای جلوگیری از انتشار نسخهٔ غیرقابل‌نصب، ساخت متوقف شد"
+                exit 1
+              fi
+            done
+            echo "گواهی نسخهٔ جدید با هر دو انتشار قبلی یکسان است."
+          } 2>&1 | tee -a build.log
+
       - name: بررسی ایمنی برنامه (Lint)
         id: lint
         run: |

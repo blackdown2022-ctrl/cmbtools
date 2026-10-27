@@ -46,9 +46,9 @@ object PanelSyncRules {
         oldNotStarted: Boolean = false,
         newNotStarted: Boolean = false
     ): Boolean {
-        // افزایش محسوس روزهای باقی‌مانده یا بازگشت از انقضا به دورهٔ فعال، ریست زمان است.
-        val remainingDaysReset = newRemainingDays > oldRemainingDays + 1 &&
-            (oldRemainingDays > 0 || oldExpireEpochDay > 0 || oldStartEpochDay > 0)
+        // افزایش محسوس روزهای باقی‌مانده فقط وقتی معتبر است که مقدار قبلی واقعاً ذخیره شده باشد.
+        // صفر در بکاپ‌های قدیمی/بازیابی‌شده یعنی «نامعلوم»؛ آن را با صفر روز باقی‌مانده اشتباه نگیریم.
+        val remainingDaysReset = oldRemainingDays != 0 && newRemainingDays > oldRemainingDays + 1
         if (remainingDaysReset) return true
 
         // هر دو «شروع‌نشده»: انقضا فقط پیش‌بینی است، نه واقعیت؛ تغییر بسته یا ریست مصرف

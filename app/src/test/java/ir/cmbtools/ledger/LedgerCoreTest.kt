@@ -320,7 +320,26 @@ class PanelSyncRulesTest {
             )
         )
 
-        // ۶) بستهٔ شروع‌نشده: انقضای «پیش‌بینی‌شده» هر روز جلو می‌رود؛
+        // مقدار باقی‌ماندهٔ صفر در بکاپ قدیمی نامعلوم است، نه شاهد تمدید؛ نباید برای همه فاکتور بسازد.
+        assertFalse(
+            PanelSyncRules.isRenewal(
+                oldExpireEpochDay = 20_100,
+                newExpireEpochDay = 20_100,
+                oldRemainingDays = 0,
+                newRemainingDays = 30
+            )
+        )
+        // مقدار منفی قبلی (حساب منقضی) معتبر است؛ بازگشت محسوس آن به روزهای مثبت تمدید است.
+        assertTrue(
+            PanelSyncRules.isRenewal(
+                oldExpireEpochDay = 20_100,
+                newExpireEpochDay = 20_100,
+                oldRemainingDays = -2,
+                newRemainingDays = 30
+            )
+        )
+
+        // ۷) بستهٔ شروع‌نشده: انقضای «پیش‌بینی‌شده» هر روز جلو می‌رود؛
         //    تا وقتی خود بسته عوض نشده، تمدید نیست (وگرنه هر روز فاکتور الکی)
         assertFalse(
             PanelSyncRules.isRenewal(

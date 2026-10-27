@@ -130,21 +130,27 @@ jobs:
               exit 1
             fi
             echo "گواهی APK جدید: $current_fingerprint"
+            mismatch=0
             for tag in v0.12.7-89 v0.12.8-91; do
               mkdir -p "$TMP_DIR/$tag"
               gh release download "$tag" --pattern '*.apk' --dir "$TMP_DIR/$tag"
               previous_apk=$(find "$TMP_DIR/$tag" -maxdepth 1 -name '*.apk' -print -quit)
               if [ -z "$previous_apk" ]; then
                 echo "e: APK نسخهٔ $tag برای بررسی امضا پیدا نشد"
-                exit 1
+                mismatch=1
+                continue
               fi
               previous_fingerprint=$(fingerprint "$previous_apk")
               echo "گواهی $tag: $previous_fingerprint"
               if [ -z "$previous_fingerprint" ] || [ "$current_fingerprint" != "$previous_fingerprint" ]; then
-                echo "e: امضای APK جدید با $tag یکی نیست؛ برای جلوگیری از انتشار نسخهٔ غیرقابل‌نصب، ساخت متوقف شد"
-                exit 1
+                echo "e: اختلاف امضا؛ جدید=$current_fingerprint، نسخهٔ $tag=$previous_fingerprint"
+                mismatch=1
               fi
             done
+            if [ "$mismatch" -ne 0 ]; then
+              echo "e: برای جلوگیری از انتشار APK غیرقابل‌نصب، ساخت متوقف شد"
+              exit 1
+            fi
             echo "گواهی نسخهٔ جدید با هر دو انتشار قبلی یکسان است."
           } 2>&1 | tee -a build.log
 

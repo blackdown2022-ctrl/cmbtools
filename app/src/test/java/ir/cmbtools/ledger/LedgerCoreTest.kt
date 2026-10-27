@@ -14,7 +14,7 @@ import ir.cmbtools.ledger.sms.RenewalSmsCommandParser
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.data.Customer
 import ir.cmbtools.ledger.data.Invoice
-import ir.cmbtools.ledger.data.withOpeningBalanceDelta
+import ir.cmbtools.ledger.data.withOpeningBalanceTarget
 import ir.cmbtools.ledger.panel.PanelUrl
 import ir.cmbtools.ledger.sms.SmsTemplate
 import org.junit.Assert.assertEquals
@@ -951,7 +951,7 @@ class BackupPayloadTest {
 
 class InvoiceOpeningBalanceSnapshotTest {
     @Test
-    fun retroactive_opening_balance_change_updates_previous_and_total_debt_snapshots() {
+    fun opening_balance_target_updates_snapshots_idempotently_when_resaved() {
         val invoice = Invoice(
             number = "12",
             customerId = 4,
@@ -962,17 +962,22 @@ class InvoiceOpeningBalanceSnapshotTest {
             balanceAfterRial = 1_500_000
         )
 
-        val afterAddingOpeningDebt = invoice.withOpeningBalanceDelta(800_000)
+        val afterAddingOpeningDebt = invoice.withOpeningBalanceTarget(800_000)
         assertEquals(800_000L, afterAddingOpeningDebt.prevBalanceRial)
         assertEquals(2_300_000L, afterAddingOpeningDebt.balanceAfterRial)
+        assertEquals(800_000L, afterAddingOpeningDebt.openingBalanceSnapshotRial)
 
-        val afterCorrectingOpeningDebt = afterAddingOpeningDebt.withOpeningBalanceDelta(-300_000)
+        val afterCorrectingOpeningDebt = afterAddingOpeningDebt.withOpeningBalanceTarget(500_000)
         assertEquals(500_000L, afterCorrectingOpeningDebt.prevBalanceRial)
         assertEquals(2_000_000L, afterCorrectingOpeningDebt.balanceAfterRial)
+        assertEquals(500_000L, afterCorrectingOpeningDebt.openingBalanceSnapshotRial)
+
+        val afterSavingSameAmountAgain = afterCorrectingOpeningDebt.withOpeningBalanceTarget(500_000)
+        assertEquals(afterCorrectingOpeningDebt, afterSavingSameAmountAgain)
     }
 
     @Test
-    fun reconstructs_legacy_total_snapshot_before_applying_opening_balance() {
+    fun reconstructs_legacy_total_snapshot_before_reconciling_opening_balance() {
         val legacy = Invoice(
             number = "13",
             customerId = 4,
@@ -981,9 +986,10 @@ class InvoiceOpeningBalanceSnapshotTest {
             prevBalanceRial = 0,
             balanceAfterRial = 0
         )
-        val adjusted = legacy.withOpeningBalanceDelta(800_000)
+        val adjusted = legacy.withOpeningBalanceTarget(800_000)
         assertEquals(800_000L, adjusted.prevBalanceRial)
         assertEquals(2_300_000L, adjusted.balanceAfterRial)
+        assertEquals(800_000L, adjusted.openingBalanceSnapshotRial)
     }
 }
 

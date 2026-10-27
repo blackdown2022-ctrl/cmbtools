@@ -70,6 +70,8 @@ data class Invoice(
     val prevBalanceRial: Long = 0,
     /** جمع کل بدهی مشتری «بعد از» این فاکتور */
     val balanceAfterRial: Long = 0,
+    /** سهمِ ماندهٔ از قبل که در snapshot این فاکتور لحاظ شده تا اصلاح‌های بعدی دوباره‌کاری نشوند */
+    val openingBalanceSnapshotRial: Long = 0,
     /** NEW = اکانت جدید، RENEW = تمدید، MANUAL = فاکتور دستی */
     val kind: String = InvoiceKind.MANUAL,
     /** آیا اپ خودکار صادر کرده است؟ */

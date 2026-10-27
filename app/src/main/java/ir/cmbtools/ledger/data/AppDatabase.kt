@@ -24,7 +24,7 @@ import ir.cmbtools.ledger.core.InvoiceNumbering
         BankSms::class,
         SmsOutbox::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -146,9 +146,43 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * ۷ → ۸: ثبت سهم ماندهٔ افتتاحیه در عکس فوری هر فاکتور و اصلاح خودکار فاکتورهای
+         * قدیمی که ماندهٔ دستی‌شان بعد از صدور ثبت شده بود.
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE invoices ADD COLUMN openingBalanceSnapshotRial INTEGER NOT NULL DEFAULT 0")
+
+                val openingAtIssue = """
+                    (SELECT COALESCE(SUM(CASE WHEN direction = 'DEBIT' THEN amountRial ELSE -amountRial END), 0)
+                     FROM ledger_entries
+                     WHERE customerId = invoices.customerId
+                       AND refType = 'OPENING_BALANCE'
+                       AND atMillis <= invoices.createdAt)
+                """.trimIndent()
+                val openingCurrent = """
+                    (SELECT COALESCE(SUM(CASE WHEN direction = 'DEBIT' THEN amountRial ELSE -amountRial END), 0)
+                     FROM ledger_entries
+                     WHERE customerId = invoices.customerId
+                       AND refType = 'OPENING_BALANCE')
+                """.trimIndent()
+
+                db.execSQL("UPDATE invoices SET openingBalanceSnapshotRial = $openingAtIssue")
+                val openingDelta = "$openingCurrent - openingBalanceSnapshotRial"
+                // Keep legacy zero sentinels usable by rebuilding their prior total first.
+                db.execSQL(
+                    "UPDATE invoices SET balanceAfterRial = " +
+                        "(CASE WHEN balanceAfterRial != 0 THEN balanceAfterRial ELSE prevBalanceRial + totalRial END) + ($openingDelta)"
+                )
+                db.execSQL("UPDATE invoices SET prevBalanceRial = prevBalanceRial + ($openingDelta)")
+                db.execSQL("UPDATE invoices SET openingBalanceSnapshotRial = $openingCurrent")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "cmb-ledger.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
     }
 }

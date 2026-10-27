@@ -90,6 +90,7 @@ class InvoiceRepository(
 
         // ماندهٔ مشتری پیش از این فاکتور. مثبت = بدهکار، منفی = بستانکار (اعتبار).
         val prevBalance = ledger.balance(customerId)
+        val openingBalance = ledger.openingBalance(customerId)
         val balanceAfter = prevBalance + total
 
         val invoiceId = invoices.insert(
@@ -113,6 +114,7 @@ class InvoiceRepository(
                 cardNumber = cardNumber,
                 prevBalanceRial = prevBalance,
                 balanceAfterRial = balanceAfter,
+                openingBalanceSnapshotRial = openingBalance,
                 kind = kind,
                 autoIssued = autoIssued
             )

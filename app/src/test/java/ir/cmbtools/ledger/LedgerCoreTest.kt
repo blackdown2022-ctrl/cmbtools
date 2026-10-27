@@ -1051,6 +1051,17 @@ class PanelCustomerNamesTest {
     }
 
     @Test
+    fun explicit_discount_suffix_can_invoice_on_first_baseline_without_bulk_billing_ordinary_users() {
+        val rules = ir.cmbtools.ledger.core.PanelCustomerNames
+        assertTrue(rules.shouldInvoiceInitialAccount(true, true, false, false, true))
+        assertFalse(rules.shouldInvoiceInitialAccount(true, true, false, false, false))
+        assertTrue(rules.shouldInvoiceInitialAccount(true, false, false, false, false))
+        assertFalse(rules.shouldInvoiceInitialAccount(true, false, true, false, true))
+        assertFalse(rules.shouldInvoiceInitialAccount(true, false, false, true, true))
+        assertFalse(rules.shouldInvoiceInitialAccount(false, true, false, false, true))
+    }
+
+    @Test
     fun panel_discount_suffix_overflow_is_detected_instead_of_wrapping() {
         val parsed = ir.cmbtools.ledger.core.PanelCustomerNames.discountSuffix("علی/999999999999999999")
         assertTrue(parsed.hasSuffix)

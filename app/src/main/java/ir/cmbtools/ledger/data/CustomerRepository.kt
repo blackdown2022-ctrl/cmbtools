@@ -75,11 +75,33 @@ class CustomerRepository(
             )
         }
 
-        // با snapshot سهم ماندهٔ افتتاحیه را دنبال می‌کنیم؛ این هم اصلاح بعد از صدور را اعمال
-        // می‌کند و هم فاکتورهای قدیمی را یک‌بار، حتی اگر کاربر فقط همان مبلغ را دوباره ذخیره کند.
+        reconcileOpeningBalanceSnapshots(customerId)
+    }
+
+    /**
+     * همگام‌سازی idempotent ماندهٔ افتتاحیه با snapshot همهٔ فاکتورهای مشتری.
+     * هنگام ورود به فاکتور و پیش از ارسال پیامک هم صدا زده می‌شود تا دفتر مشتری و سند جدا نشوند.
+     */
+    suspend fun reconcileOpeningBalanceSnapshots(customerId: Long): Int {
+        val targetRial = ledger.openingBalance(customerId)
+        var updated = 0
         for (invoice in invoices.allForCustomer(customerId)) {
-            invoices.update(invoice.withOpeningBalanceTarget(targetRial))
+            val reconciled = invoice.withOpeningBalanceTarget(targetRial)
+            if (reconciled != invoice) {
+                invoices.update(reconciled)
+                updated++
+            }
         }
+        return updated
+    }
+
+    /** یک‌بار همگام‌سازی همهٔ snapshotها پس از بازشدن دیتابیس/ورود به نسخهٔ جدید. */
+    suspend fun reconcileAllOpeningBalanceSnapshots(): Int {
+        var updated = 0
+        for (customer in customers.all()) {
+            updated += reconcileOpeningBalanceSnapshots(customer.id)
+        }
+        return updated
     }
 
     suspend fun create(name: String, phone: String, cardLast4: String, note: String, creditLimitRial: Long): Long {

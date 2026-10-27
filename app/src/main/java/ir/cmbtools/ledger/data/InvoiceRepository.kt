@@ -36,6 +36,15 @@ class InvoiceRepository(
 
     suspend fun get(id: Long): Invoice? = invoices.byId(id)
 
+    /** Repair this invoice against the customer's current opening-balance source of truth. */
+    suspend fun reconcileOpeningBalanceSnapshot(invoiceId: Long): Invoice? {
+        val invoice = invoices.byId(invoiceId) ?: return null
+        val openingBalance = ledger.openingBalance(invoice.customerId)
+        val reconciled = invoice.withOpeningBalanceTarget(openingBalance)
+        if (reconciled != invoice) invoices.update(reconciled)
+        return reconciled
+    }
+
     suspend fun lines(invoiceId: Long): List<InvoiceLine> = invoices.lines(invoiceId)
 
     suspend fun autoIssuedForPanelUser(panelUserUuid: String): List<Invoice> =

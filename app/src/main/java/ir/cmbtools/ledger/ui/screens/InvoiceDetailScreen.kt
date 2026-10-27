@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +66,10 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
     val customers by vm.customers.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    LaunchedEffect(invoiceId) {
+        vm.reconcileInvoiceOpeningBalance(invoiceId)
+    }
 
     var showSmsPreview by remember { mutableStateOf(false) }
     var showEdit by remember { mutableStateOf(false) }

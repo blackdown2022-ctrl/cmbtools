@@ -40,7 +40,10 @@ data class SyncReport(
                 if (customersCreated > 0) {
                     append(" و ").append(Money.toPersian(customersCreated.toString())).append(" مشتری متصل شد")
                 }
-                append(" (برای کاربران قبلی فاکتور صادر نمی‌شود).")
+                if (invoicesIssued > 0) {
+                    append(" • ").append(Money.toPersian(invoicesIssued.toString())).append(" فاکتور برای اکانت‌های دارای پسوند تخفیف")
+                }
+                append(" (برای کاربران قبلیِ بدون پسوند تخفیف فاکتور صادر نمی‌شود).")
                 return@buildString
             }
             append(Money.toPersian(total.toString())).append(" کاربر بررسی شد")
@@ -62,8 +65,8 @@ data class SyncReport(
  *  ۴) فاکتور را بلافاصله با پیامک برای شمارهٔ ثبت‌شده می‌فرستد.
  *
  * ضد تکرار:
- *  - اولین همگام‌سازی فقط «خط پایه» می‌سازد و فاکتور صادر نمی‌کند.
- *  - برای هر اکانت، «اکانت جدید» فقط یک بار فاکتور می‌گیرد.
+ *  - اولین همگام‌سازی کاربران عادی فقط «خط پایه» می‌سازد؛ پسوند تخفیف `/عدد` سیگنال صریح صدور فاکتور اولیه است.
+ *  - برای هر اکانت، فاکتور اولیه با UUID کنترل می‌شود تا دوباره صادر نشود.
  *  - هر انقضای مشخص فقط یک بار فاکتور تمدید می‌گیرد (`lastInvoicedExpireEpochDay`).
  */
 class SyncEngine(
@@ -220,16 +223,26 @@ class SyncEngine(
             )
             // زمان آخرین تمدید برای نمایش در کارت اکانت («آخرین تمدید: ...»)
             val renewedAt = if (renewed) System.currentTimeMillis() else (old?.lastRenewedAtMillis ?: 0L)
+            val hasInvoiceForPanelUser = billing.hasInvoicesForPanelUser(u.uuid)
+            val shouldInvoiceNew = PanelCustomerNames.shouldInvoiceInitialAccount(
+                autoInvoiceEnabled = settings.autoInvoiceOnNewAccount,
+                firstSync = firstRun,
+                wasKnownBefore = !isNewUser,
+                alreadyHasInvoice = hasInvoiceForPanelUser,
+                hasDiscountSuffix = panelName.hasSuffix
+            )
 
-            if (firstRun) {
-                // خط پایه: فقط ثبت وضعیت، بدون فاکتور
+            if (firstRun && !shouldInvoiceNew) {
+                // خط پایه: کاربران عادی فقط ثبت وضعیت می‌شوند؛ پسوند تخفیف سیگنال صریح صدور است.
             } else if (allowInvoicing) {
                 if (isNewUser) newUsers++
                 if (renewed) renewals++
 
-                val shouldInvoiceNew = isNewUser && settings.autoInvoiceOnNewAccount
                 val shouldInvoiceRenew = renewed && settings.autoInvoiceOnRenew &&
                     newExpire != lastInvoicedExpire
+                if (panelName.hasSuffix && !settings.autoInvoiceOnNewAccount && !hasInvoiceForPanelUser) {
+                    problems += "${u.name}: پسوند تخفیف شناسایی شد، اما صدور خودکار فاکتور اکانت جدید خاموش است"
+                }
 
                 // گزارش تمدید مستقل از روشن/خاموش بودن صدور فاکتور خودکار است.
                 // در مسیر فاکتور، AutoBilling همین گزارش را بعد از تلاش صدور می‌فرستد.

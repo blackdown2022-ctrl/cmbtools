@@ -192,6 +192,9 @@ class AutoBilling(
         }
     }
 
+    suspend fun hasInvoicesForPanelUser(uuid: String): Boolean =
+        invoices.hasInvoicesForPanelUser(uuid)
+
     private suspend fun createAndNotify(
         customerId: Long,
         panelUuid: String,
@@ -267,7 +270,7 @@ class AutoBilling(
 
     /** ارسال (یا ارسال دوبارهٔ) پیامک یک فاکتور */
     suspend fun sendInvoiceSms(invoiceId: Long): BillingResult {
-        val invoice: Invoice = invoices.get(invoiceId)
+        val invoice: Invoice = invoices.reconcileOpeningBalanceSnapshot(invoiceId)
             ?: return BillingResult(false, message = "فاکتور پیدا نشد")
         val customer: Customer = customers.byId(invoice.customerId)
             ?: return BillingResult(false, message = "مشتری پیدا نشد")
@@ -308,9 +311,10 @@ class AutoBilling(
 
     /** متن پیامک برای پیش‌نمایش در UI */
     suspend fun previewSms(invoice: Invoice): String {
-        val customer = customers.byId(invoice.customerId) ?: return ""
-        val lines = invoices.lines(invoice.id)
-        return SmsTemplate.render(settings, invoice, customer, lines, invoice.subscriptionUrl)
+        val currentInvoice = invoices.reconcileOpeningBalanceSnapshot(invoice.id) ?: invoice
+        val customer = customers.byId(currentInvoice.customerId) ?: return ""
+        val lines = invoices.lines(currentInvoice.id)
+        return SmsTemplate.render(settings, currentInvoice, customer, lines, currentInvoice.subscriptionUrl)
     }
 
     // ─────────────────────────────────────────────────────────── مشتری

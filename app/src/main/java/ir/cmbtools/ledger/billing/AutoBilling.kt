@@ -109,6 +109,7 @@ class AutoBilling(
         packageName: String,
         priceRial: Long,
         planId: Long = 0,
+        discountRial: Long = 0,
         sendSms: Boolean = settings.autoSmsOnInvoice,
         note: String = ""
     ): BillingResult = createAndNotify(
@@ -120,6 +121,7 @@ class AutoBilling(
         packageName = packageName,
         priceRial = priceRial,
         planId = planId,
+        discountRial = discountRial,
         kind = InvoiceKind.NEW,
         note = note.ifBlank { "اکانت جدید" },
         sendSms = sendSms
@@ -148,6 +150,7 @@ class AutoBilling(
                 packageName = packageName,
                 priceRial = priceRial,
                 planId = planId,
+                discountRial = 0,
                 kind = InvoiceKind.RENEW,
                 note = note.ifBlank { "تمدید" },
                 sendSms = sendSms
@@ -198,6 +201,7 @@ class AutoBilling(
         packageName: String,
         priceRial: Long,
         planId: Long,
+        discountRial: Long,
         kind: String,
         note: String,
         sendSms: Boolean
@@ -226,6 +230,7 @@ class AutoBilling(
                 )
             ),
             planId = planId,
+            discountRial = discountRial.coerceIn(0, priceRial),
             panelUserUuid = panelUuid,
             panelId = 1,
             subscriptionUrl = subscriptionUrl,

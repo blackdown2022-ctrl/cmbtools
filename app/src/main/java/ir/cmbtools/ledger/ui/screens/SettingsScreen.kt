@@ -493,7 +493,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 Spacer(Modifier.height(10.dp))
                 SwitchLine(
                     title = "فاکتور خودکار برای کاربر جدید پنل",
-                    hint = "کاربری که مستقیم در پنل ساخته می‌شود",
+                    hint = "در نام کاربر پنل، بعد از شماره /50 بگذارید؛ ۵۰ یعنی ۵۰۰٬۰۰۰ ریال تخفیف (فقط فاکتور اولیه)",
                     checked = settings.autoInvoiceOnNewAccount,
                     onChange = { v -> vm.updateSettings { it.copy(autoInvoiceOnNewAccount = v) } }
                 )
@@ -606,7 +606,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 )
                 Text(
                     "متغیرها: {customer} {invoiceNo} {datetime} {date} {package} {kind} " +
-                        "{items} {total} {prevBalance} {totalDebt} {debt} {card} {footer}",
+                        "{items} {total} {discount} {prevBalance} {totalDebt} {debt} {card} {footer}",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )

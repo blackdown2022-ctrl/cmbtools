@@ -58,7 +58,7 @@ data class AppSettings(
          *
          * متغیرهای قابل استفاده:
          *  {customer} {invoiceNo} {datetime} {date} {package} {items}
-         *  {total} {prevBalance} {totalDebt} {debt} {card} {kind} {footer}
+         *  {total} {discount} {prevBalance} {totalDebt} {debt} {card} {kind} {footer}
          *
          * (`{business}` و `{link}` حذف شده‌اند؛ اگر در قالب دستی مانده باشند،
          *  خالی جایگزین می‌شوند تا نام فروشگاه/لینک در پیامک نیاید.)
@@ -93,6 +93,7 @@ data class AppSettings(
                 "تاریخ: {datetime}\n" +
                 "بسته: {package}\n" +
                 "مبلغ: {total}\n" +
+                "تخفیف: {discount}\n" +
                 "{debt}" +
                 "کارت: {card}\n" +
                 "{footer}"

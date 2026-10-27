@@ -462,6 +462,38 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateInvoice(
+        invoiceId: Long,
+        lines: List<NewInvoiceLine>,
+        discountRial: Long,
+        note: String,
+        sendUpdatedSms: Boolean,
+        onDone: (ActionResult) -> Unit = {}
+    ) = viewModelScope.launch {
+        _busy.value = true
+        var result = ActionResult(false, invoiceId = invoiceId)
+        try {
+            c.db.withTransaction {
+                c.invoices.updateDetails(invoiceId, lines, discountRial, note)
+            }
+            result = ActionResult(true, "فاکتور و تخفیف ذخیره شد", invoiceId)
+            var smsFailed = false
+            if (sendUpdatedSms) {
+                val sms = runCatching { sendInvoiceSmsInternal(invoiceId) }
+                    .getOrElse { ActionResult(false, it.message ?: "خطای ارسال پیامک", invoiceId) }
+                smsFailed = !sms.ok
+                result = result.copy(message = "فاکتور ذخیره شد؛ ${sms.message}")
+            }
+            if (smsFailed) failure(result.message) else success(result.message)
+        } catch (error: Exception) {
+            result = ActionResult(false, error.message ?: "ویرایش فاکتور ناموفق بود", invoiceId)
+            failure(result.message)
+        } finally {
+            _busy.value = false
+            onDone(result)
+        }
+    }
+
     fun voidInvoice(id: Long) = viewModelScope.launch {
         runCatching { c.invoices.void(id) }
             .onSuccess { success("فاکتور ابطال شد") }

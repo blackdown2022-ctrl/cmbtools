@@ -67,6 +67,7 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
     val context = LocalContext.current
 
     var showSmsPreview by remember { mutableStateOf(false) }
+    var showEdit by remember { mutableStateOf(false) }
     var showVoid by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
 
@@ -198,6 +199,12 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
                 }
 
                 SectionCard(title = "اقدامات") {
+                    if (inv.status != InvoiceStatus.VOID) {
+                        OutlinedButton(onClick = { showEdit = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text("ویرایش فاکتور و تخفیف")
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
                     Button(
                         onClick = { showSmsPreview = true },
                         modifier = Modifier.fillMaxWidth(),
@@ -236,6 +243,15 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
 
             Spacer(Modifier.height(30.dp))
         }
+    }
+
+    if (showEdit && invoice != null) {
+        InvoiceEditDialog(
+            vm = vm,
+            invoice = invoice!!,
+            originalLines = lines,
+            onDismiss = { showEdit = false }
+        )
     }
 
     if (showSmsPreview && invoice != null && customer != null) {

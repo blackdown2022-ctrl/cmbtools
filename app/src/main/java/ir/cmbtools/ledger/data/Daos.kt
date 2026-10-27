@@ -86,6 +86,9 @@ interface InvoiceDao {
     @Query("SELECT * FROM invoices WHERE id = :id")
     suspend fun byId(id: Long): Invoice?
 
+    @Query("SELECT * FROM invoices WHERE customerId = :customerId AND (issuedAtEpochDay > :issuedAtEpochDay OR (issuedAtEpochDay = :issuedAtEpochDay AND id > :invoiceId))")
+    suspend fun laterForCustomer(customerId: Long, issuedAtEpochDay: Long, invoiceId: Long): List<Invoice>
+
     @Query("SELECT * FROM invoices WHERE status != 'VOID' AND customerId = :customerId ORDER BY issuedAtEpochDay ASC, id ASC")
     suspend fun openInvoicesOldestFirst(customerId: Long): List<Invoice>
 
@@ -182,7 +185,7 @@ interface LedgerDao {
     @Insert
     suspend fun insert(entry: LedgerEntry): Long
 
-    @Query("DELETE FROM ledger_entries WHERE refId = :refId AND refType IN ('INVOICE', 'INVOICE_VOID')")
+    @Query("DELETE FROM ledger_entries WHERE refId = :refId AND refType IN ('INVOICE', 'INVOICE_VOID', 'INVOICE_EDIT')")
     suspend fun deleteInvoiceEntries(refId: Long)
 
     @Insert

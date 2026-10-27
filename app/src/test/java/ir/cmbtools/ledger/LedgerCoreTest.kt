@@ -247,8 +247,9 @@ class PanelSyncRulesTest {
         assertTrue(PanelSyncRules.isRenewal(19000, 0, oldUsageGb = 12.5, newUsageGb = 0.0))
         // اگر مصرف صفر نشده بود، تمدید نیست
         assertFalse(PanelSyncRules.isRenewal(19000, 0, oldUsageGb = 12.5, newUsageGb = 12.4))
-        // کاربر تازه (انقضای قبلی صفر) هرگز «تمدید» حساب نمی‌شود
-        assertFalse(PanelSyncRules.isRenewal(0, 19030, oldUsageGb = 5.0, newUsageGb = 0.0))
+        // انقضای قبلی صفر به‌تنهایی تمدید نیست؛ اما ریست واقعی حجم برای حساب شناخته‌شده نشانهٔ تمدید است.
+        assertFalse(PanelSyncRules.isRenewal(0, 19030))
+        assertTrue(PanelSyncRules.isRenewal(0, 19030, oldUsageGb = 5.0, newUsageGb = 0.0))
     }
 
     @Test
@@ -295,8 +296,8 @@ class PanelSyncRulesTest {
             )
         )
 
-        // ۴) فقط مصرف صفر شده، روز/بسته دست‌نخورده → تمدید نیست (ریست مصرف، نه تمدید)
-        assertFalse(
+        // ۴) فقط حجم ریست شده، حتی اگر روز و تاریخ انقضا ثابت بمانند → تمدید است.
+        assertTrue(
             PanelSyncRules.isRenewal(
                 oldExpireEpochDay = 20_100,
                 newExpireEpochDay = 20_100,
@@ -309,7 +310,17 @@ class PanelSyncRulesTest {
             )
         )
 
-        // ۵) بستهٔ شروع‌نشده: انقضای «پیش‌بینی‌شده» هر روز جلو می‌رود؛
+        // ۵) افزایش روزهای باقی‌مانده، حتی با تاریخ انقضای ثابت، ریست زمان/تمدید است.
+        assertTrue(
+            PanelSyncRules.isRenewal(
+                oldExpireEpochDay = 20_100,
+                newExpireEpochDay = 20_100,
+                oldRemainingDays = 1,
+                newRemainingDays = 30
+            )
+        )
+
+        // ۶) بستهٔ شروع‌نشده: انقضای «پیش‌بینی‌شده» هر روز جلو می‌رود؛
         //    تا وقتی خود بسته عوض نشده، تمدید نیست (وگرنه هر روز فاکتور الکی)
         assertFalse(
             PanelSyncRules.isRenewal(
@@ -1056,9 +1067,10 @@ class PanelCustomerNamesTest {
         assertTrue(rules.shouldInvoiceInitialAccount(true, true, false, false, true))
         assertFalse(rules.shouldInvoiceInitialAccount(true, true, false, false, false))
         assertTrue(rules.shouldInvoiceInitialAccount(true, false, false, false, false))
-        assertFalse(rules.shouldInvoiceInitialAccount(true, false, true, false, true))
+        assertTrue(rules.shouldInvoiceInitialAccount(true, false, true, false, true))
         assertFalse(rules.shouldInvoiceInitialAccount(true, false, false, true, true))
-        assertFalse(rules.shouldInvoiceInitialAccount(false, true, false, false, true))
+        assertTrue(rules.shouldInvoiceInitialAccount(false, true, true, false, true))
+        assertFalse(rules.shouldInvoiceInitialAccount(false, true, true, false, false))
     }
 
     @Test

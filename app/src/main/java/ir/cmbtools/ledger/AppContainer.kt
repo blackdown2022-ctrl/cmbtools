@@ -38,7 +38,7 @@ class AppContainer(context: Context) {
     private val invoiceNumberCounterDao = db.invoiceNumberCounter()
 
     val customers = CustomerRepository(customersDao, ledgerDao, invoicesDao)
-    val invoices = InvoiceRepository(invoicesDao, ledgerDao, paymentsDao, invoiceNumberCounterDao)
+    val invoices = InvoiceRepository(invoicesDao, ledgerDao, paymentsDao, invoiceNumberCounterDao, db)
     val payments = PaymentRepository(paymentsDao, invoicesDao, invoices, ledgerDao)
     val reports = ReportingRepository(invoicesDao, paymentsDao, expensesDao, ledgerDao, customersDao, panelDao, bankSmsDao)
 

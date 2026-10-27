@@ -192,8 +192,11 @@ class AutoBilling(
         }
     }
 
-    suspend fun hasInvoicesForPanelUser(uuid: String): Boolean =
-        invoices.hasInvoicesForPanelUser(uuid)
+    suspend fun initialInvoiceForPanelUser(uuid: String): Invoice? =
+        invoices.initialInvoiceForPanelUser(uuid)
+
+    suspend fun applyPanelInitialDiscount(invoiceId: Long, discountRial: Long): Invoice? =
+        invoices.applyPanelInitialDiscount(invoiceId, discountRial)
 
     private suspend fun createAndNotify(
         customerId: Long,
@@ -216,7 +219,7 @@ class AutoBilling(
             ?: return BillingResult(false, message = "مشتری پیدا نشد")
 
         // ضد تکرار: برای «اکانت جدید» هر اکانت فقط یک فاکتور؛ تمدیدها فاکتور جدا دارند.
-        if (kind == InvoiceKind.NEW && panelUuid.isNotBlank() && invoices.hasInvoicesForPanelUser(panelUuid)) {
+        if (kind == InvoiceKind.NEW && panelUuid.isNotBlank() && invoices.hasInitialInvoiceForPanelUser(panelUuid)) {
             return BillingResult(false, message = "برای این اکانت قبلاً فاکتور صادر شده است")
         }
 

@@ -2,7 +2,7 @@ package ir.cmbtools.ledger.core
 
 /**
  * قواعد خالصِ (بدون وابستگی به اندروید) تطبیق بسته و تشخیص تمدید.
- * این‌ها همان تصمیم‌هایی هستند که «فاکتور خودکار» بر پایهٔ آن‌ها صادر می‌شود،
+ * این‌ها همان تصمیم‌هایی هستند که فاکتور تمدید بر پایهٔ آن‌ها صادر می‌شود،
  * بنابراین جدا و تست‌پذیر نگه داشته شده‌اند.
  */
 object PanelSyncRules {
@@ -13,9 +13,8 @@ object PanelSyncRules {
     /**
      * آیا این تغییرات «تمدید» است؟
      *
-     * **تعریف تمدید در این اپ (همان تعریف پنل):** «روز» و «حجم» از نو تنظیم شود.
-     * یعنی یا شمارش روزها از ابتدا شروع شود، یا حجم/سقف بسته عوض شود و مصرف صفر گردد.
-     * هر کاربری در پنل که حجم و روزش ریست شده باشد، «تمدید شده» است — حتی اگر
+     * **تعریف تمدید در این اپ:** ریست سهمیهٔ حجم یا آغاز دوبارهٔ دورهٔ زمانی.
+     * هر کاربری در پنل که حجمش ریست شود یا شمارش دوره‌اش از نو آغاز شود، تمدید شده است — حتی اگر
      * تاریخ انقضای قبلی‌اش دورتر بوده باشد (کاربر استفاده‌نشده).
      *
      * حالت‌هایی که تمدید حساب می‌شوند:
@@ -23,7 +22,8 @@ object PanelSyncRules {
      *     شمارش روزها از اولین اتصال بعدی شروع می‌شود.
      *  ۲) تاریخ شروع دوره جلو رفته (تمدید با تاریخ دستی).
      *  ۳) تاریخ انقضا بیش از ۱ روز جلو رفته (اختلاف ۱ روز = ساعت/منطقه‌زمانی).
-     *  ۴) مصرف صفر شده **و** روز/بسته هم عوض شده (ریست هم‌زمان حجم و روز).
+     *  ۴) مصرف حجم به‌طور محسوس کاهش/ریست شده، حتی اگر تاریخ یا بسته تغییر نکرده باشد.
+     *  ۵) روزهای باقی‌مانده به‌طور محسوس افزایش یافته یا از انقضا به دورهٔ فعال برگشته باشد.
      *
      * حالت «بستهٔ شروع‌نشده»: در نسخه‌های ۱۱–۱۳ تا اولین اتصال کاربر `start_date`
      * خالی است، پس تاریخ انقضا فقط یک «پیش‌بینی روزانه» است و هر روز یک روز جلو
@@ -39,20 +39,38 @@ object PanelSyncRules {
         newStartEpochDay: Long = 0,
         oldDays: Int = 0,
         newDays: Int = 0,
+        oldRemainingDays: Int = 0,
+        newRemainingDays: Int = 0,
         oldLimitGb: Double = 0.0,
         newLimitGb: Double = 0.0,
         oldNotStarted: Boolean = false,
         newNotStarted: Boolean = false
     ): Boolean {
-        // خط پایه: کاربر تازه یا اکانتی که هنوز تاریخ انقضا ندارد
-        if (oldExpireEpochDay <= 0) return false
+        // افزایش محسوس روزهای باقی‌مانده یا بازگشت از انقضا به دورهٔ فعال، ریست زمان است.
+        val remainingDaysReset = newRemainingDays > oldRemainingDays + 1 &&
+            (oldRemainingDays > 0 || oldExpireEpochDay > 0 || oldStartEpochDay > 0)
+        if (remainingDaysReset) return true
 
-        // هر دو «شروع‌نشده»: انقضا فقط پیش‌بینی است، نه واقعیت
+        // هر دو «شروع‌نشده»: انقضا فقط پیش‌بینی است، نه واقعیت؛ تغییر بسته یا ریست مصرف
+        // نشانهٔ تمدید محسوب می‌شود.
+        val usageReset = oldUsageGb > 0.3 && newUsageGb + 0.3 < oldUsageGb
         if (oldNotStarted && newNotStarted) {
             val packageChanged = newDays > 0 && newDays != oldDays
             val limitChanged = oldLimitGb > 0 &&
                 kotlin.math.abs(newLimitGb - oldLimitGb) > GB_TOLERANCE
-            return packageChanged || limitChanged
+            return packageChanged || limitChanged || usageReset
+        }
+
+        // اگر مصرف حجم واقعاً به مقدار پایین‌تری برگشت، خودِ ریست برای تمدید کافی است؛
+        // لازم نیست تاریخ انقضا یا بسته هم حتماً عوض شده باشد.
+        if (usageReset) return true
+        // تغییر مدت بستهٔ یک حساب شناخته‌شده هم شروع دورهٔ جدید محسوب می‌شود.
+        if (oldDays > 0 && newDays > 0 && oldDays != newDays) return true
+
+        // اکانتی که هنوز تاریخ انقضای قبلی ندارد، فقط با شواهد صریح شروع دوره شناخته می‌شود.
+        if (oldExpireEpochDay <= 0) {
+            return oldStartEpochDay > 0 &&
+                (newStartEpochDay == 0L || newStartEpochDay > oldStartEpochDay + 1)
         }
 
         // ۱) شمارش روزها از نو: start_date پاک شده است
@@ -62,13 +80,7 @@ object PanelSyncRules {
         // ۳) تاریخ انقضا جلو رفته
         if (newExpireEpochDay > oldExpireEpochDay + 1) return true
 
-        // ۴) حجم ریست شده و روز/بسته هم عوض شده → همان «ریست حجم و روز»
-        val usageReset = oldUsageGb > 0.3 && newUsageGb + 0.3 < oldUsageGb
-        if (!usageReset) return false
-        return newDays != oldDays ||
-            newExpireEpochDay != oldExpireEpochDay ||
-            newStartEpochDay != oldStartEpochDay ||
-            newNotStarted
+        return false
     }
 
     /**

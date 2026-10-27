@@ -97,6 +97,7 @@ class RenewalSmsCommandProcessor(
             if (!invoice.ok) {
                 Result(false, "اکانت تمدید شد، اما فاکتور صادر نشد: ${invoice.message}")
             } else {
+                panelService.markRenewalInvoiced(account.panelUserUuid)
                 Result(
                     true,
                     buildString {

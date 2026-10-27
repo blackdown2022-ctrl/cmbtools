@@ -240,6 +240,7 @@ data class PanelAccount(
     val name: String,
     val gb: Double = 0.0,
     val days: Int = 0,
+    val remainingDays: Int = 0,
     val startEpochDay: Long = 0,
     val expireEpochDay: Long = 0,
     val usageGb: Double = 0.0,
@@ -255,6 +256,8 @@ data class PanelAccount(
      * هم وقتی اپ تمدید می‌کند و هم وقتی همگام‌سازی از پنل تشخیص می‌دهد پر می‌شود.
      */
     val lastRenewedAtMillis: Long = 0,
+    /** Last renewal event with a successfully created invoice; used to retry failed invoice attempts. */
+    val lastInvoicedRenewalAtMillis: Long = 0,
     /** Auto-renew on depleted quota or expired days; intentionally off for all existing accounts. */
     val autoRenewEnabled: Boolean = false,
     val syncedAt: Long = System.currentTimeMillis()

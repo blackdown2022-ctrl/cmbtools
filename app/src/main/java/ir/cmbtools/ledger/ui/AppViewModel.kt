@@ -444,6 +444,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     1,
                     provision.subscriptionUrl
                 )
+                c.panelService.markRenewalInvoiced(panelUuid)
                 result = result.copy(
                     message = "تمدید انجام شد — حجم و روز ریست شد (${provision.expireInDays} روز باقی‌مانده)",
                     subscriptionUrl = provision.subscriptionUrl

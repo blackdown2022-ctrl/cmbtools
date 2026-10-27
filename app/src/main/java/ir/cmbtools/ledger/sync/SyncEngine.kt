@@ -23,6 +23,7 @@ data class SyncReport(
     val newUsers: Int = 0,
     val renewals: Int = 0,
     val invoicesIssued: Int = 0,
+    val discountsCorrected: Int = 0,
     val smsSent: Int = 0,
     val customersCreated: Int = 0,
     val skipped: Int = 0,
@@ -43,6 +44,9 @@ data class SyncReport(
                 if (invoicesIssued > 0) {
                     append(" • ").append(Money.toPersian(invoicesIssued.toString())).append(" فاکتور برای اکانت‌های دارای پسوند تخفیف")
                 }
+                if (discountsCorrected > 0) {
+                    append(" • تخفیف ").append(Money.toPersian(discountsCorrected.toString())).append(" فاکتور اصلاح شد")
+                }
                 append(" (برای کاربران قبلیِ بدون پسوند تخفیف فاکتور صادر نمی‌شود).")
                 return@buildString
             }
@@ -50,6 +54,7 @@ data class SyncReport(
             if (newUsers > 0) append(" • ").append(Money.toPersian(newUsers.toString())).append(" جدید")
             if (renewals > 0) append(" • ").append(Money.toPersian(renewals.toString())).append(" تمدید")
             if (invoicesIssued > 0) append(" • ").append(Money.toPersian(invoicesIssued.toString())).append(" فاکتور")
+            if (discountsCorrected > 0) append(" • تخفیف ").append(Money.toPersian(discountsCorrected.toString())).append(" فاکتور اصلاح شد")
             if (customersCreated > 0) append(" • ").append(Money.toPersian(customersCreated.toString())).append(" مشتری متصل")
             if (smsSent > 0) append(" • ").append(Money.toPersian(smsSent.toString())).append(" پیامک")
             if (skipped > 0) append(" • ").append(Money.toPersian(skipped.toString())).append(" رد شد")
@@ -114,6 +119,11 @@ class SyncEngine(
         var skipped = 0
         val problems = mutableListOf<String>()
 
+        // هر تمدید خودکاری که همین دور برایش فاکتور صادر شد از صدور دوباره در حلقهٔ sync عادی مستثناست.
+        val renewalInvoicedThisSync = mutableSetOf<String>()
+        val renewalInvoicedAtThisSync = mutableMapOf<String, Long>()
+        var discountsCorrected = 0
+
         // Renew only accounts explicitly opted in, and only after a successful panel read.
         // After a successful renewal, refresh users before normal sync so old expiry data cannot
         // trigger a second invoice in this same pass.
@@ -162,6 +172,9 @@ class SyncEngine(
                 }
                 if (invoice != null && invoice.ok) {
                     issued++
+                    val renewalAt = System.currentTimeMillis()
+                    renewalInvoicedThisSync += u.uuid
+                    renewalInvoicedAtThisSync[u.uuid] = renewalAt
                     if (invoice.smsSent) sms++
                 } else if (invoice != null) {
                     skipped++
@@ -216,19 +229,46 @@ class SyncEngine(
                 newStartEpochDay = newStart,
                 oldDays = old?.days ?: 0,
                 newDays = u.packageDays,
+                oldRemainingDays = old?.remainingDays ?: 0,
+                newRemainingDays = u.remainingDaysOrComputed,
                 oldLimitGb = old?.gb ?: 0.0,
                 newLimitGb = u.usageLimitGb,
                 oldNotStarted = (old?.startEpochDay ?: 0L) == 0L,
                 newNotStarted = u.notStarted
             )
-            // زمان آخرین تمدید برای نمایش در کارت اکانت («آخرین تمدید: ...»)
-            val renewedAt = if (renewed) System.currentTimeMillis() else (old?.lastRenewedAtMillis ?: 0L)
-            val hasInvoiceForPanelUser = billing.hasInvoicesForPanelUser(u.uuid)
+            // اگر فاکتور رویداد تمدید قبلی ناموفق بوده باشد، در این sync دوباره امتحان می‌شود.
+            val pendingRenewal = old != null && old.lastRenewedAtMillis > old.lastInvoicedRenewalAtMillis
+            // زمان آخرین تمدید برای نمایش در کارت اکانت و اتصال به فاکتور موفق.
+            val renewedAt = renewalInvoicedAtThisSync[u.uuid]
+                ?: if (renewed) System.currentTimeMillis() else (old?.lastRenewedAtMillis ?: 0L)
+            var initialInvoice = billing.initialInvoiceForPanelUser(u.uuid)
+            val existingInitialInvoice = initialInvoice
+            if (allowInvoicing && existingInitialInvoice != null && panelName.hasSuffix && panelName.discountRial != null &&
+                panelName.discountRial > existingInitialInvoice.discountRial
+            ) {
+                val previousDiscountRial = existingInitialInvoice.discountRial
+                runCatching {
+                    billing.applyPanelInitialDiscount(existingInitialInvoice.id, panelName.discountRial)
+                }.onSuccess { corrected ->
+                    if (corrected != null && corrected.discountRial > previousDiscountRial) {
+                        discountsCorrected++
+                        initialInvoice = corrected
+                        if (settings.autoSmsOnInvoice) {
+                            val smsResult = billing.sendInvoiceSms(corrected.id)
+                            if (smsResult.smsSent) sms++
+                            else problems += "${u.name}: تخفیف فاکتور اصلاح شد، اما پیامک اصلاح‌شده ارسال نشد: ${smsResult.message}"
+                        }
+                    }
+                }.onFailure { error ->
+                    problems += "${u.name}: تخفیف فاکتور قبلی اعمال نشد: ${error.message ?: "فاکتور پرداخت‌شده یا خطای داخلی"}"
+                }
+            }
+            val hasInitialInvoice = initialInvoice != null
             val shouldInvoiceNew = PanelCustomerNames.shouldInvoiceInitialAccount(
                 autoInvoiceEnabled = settings.autoInvoiceOnNewAccount,
                 firstSync = firstRun,
                 wasKnownBefore = !isNewUser,
-                alreadyHasInvoice = hasInvoiceForPanelUser,
+                alreadyHasInvoice = hasInitialInvoice,
                 hasDiscountSuffix = panelName.hasSuffix
             )
 
@@ -238,19 +278,8 @@ class SyncEngine(
                 if (isNewUser) newUsers++
                 if (renewed) renewals++
 
-                val shouldInvoiceRenew = renewed && settings.autoInvoiceOnRenew &&
-                    newExpire != lastInvoicedExpire
-                if (panelName.hasSuffix && !settings.autoInvoiceOnNewAccount && !hasInvoiceForPanelUser) {
-                    problems += "${u.name}: پسوند تخفیف شناسایی شد، اما صدور خودکار فاکتور اکانت جدید خاموش است"
-                }
-
-                // گزارش تمدید مستقل از روشن/خاموش بودن صدور فاکتور خودکار است.
-                // در مسیر فاکتور، AutoBilling همین گزارش را بعد از تلاش صدور می‌فرستد.
-                if (renewed && !settings.autoInvoiceOnRenew) {
-                    sendDetectedRenewalReport(customerId, u.name, u.usageLimitGb, u.packageDays)
-                        ?.let { problems += "${u.name}: گزارش تمدید ارسال نشد: $it" }
-                }
-
+                val renewalNeedsInvoice = (renewed || pendingRenewal) && u.uuid !in renewalInvoicedThisSync
+                val shouldInvoiceRenew = renewalNeedsInvoice && !shouldInvoiceNew
                 if (shouldInvoiceNew || shouldInvoiceRenew) {
                     // ۱) مشتری: پیش‌تر در همین دور حل/ساخته شده است
                     if (customerId <= 0) {
@@ -309,7 +338,11 @@ class SyncEngine(
                                 issued++
                                 if (result.smsSent) sms++
                                 else if (settings.autoSmsOnInvoice) problems += "${u.name}: ${result.message}"
-                                if (shouldInvoiceRenew) lastInvoicedExpire = newExpire
+                                if (renewalNeedsInvoice) {
+                                    lastInvoicedExpire = newExpire
+                                    renewalInvoicedThisSync += u.uuid
+                                    renewalInvoicedAtThisSync[u.uuid] = renewedAt
+                                }
                             } else if (result != null) {
                                 skipped++
                                 problems += "${u.name}: ${result.message}"
@@ -344,6 +377,7 @@ class SyncEngine(
                     name = u.name,
                     gb = u.usageLimitGb,
                     days = u.packageDays,
+                    remainingDays = u.remainingDaysOrComputed,
                     startEpochDay = newStart,
                     expireEpochDay = newExpire,
                     usageGb = u.currentUsageGb,
@@ -353,6 +387,8 @@ class SyncEngine(
                     prevExpireEpochDay = oldExpire,
                     lastInvoicedExpireEpochDay = lastInvoicedExpire,
                     lastRenewedAtMillis = renewedAt,
+                    lastInvoicedRenewalAtMillis = renewalInvoicedAtThisSync[u.uuid]
+                        ?: (old?.lastInvoicedRenewalAtMillis ?: 0L),
                     autoRenewEnabled = old?.autoRenewEnabled ?: false
                 )
             )
@@ -371,6 +407,7 @@ class SyncEngine(
             newUsers = newUsers,
             renewals = renewals,
             invoicesIssued = issued,
+            discountsCorrected = discountsCorrected,
             smsSent = sms,
             customersCreated = createdCustomers,
             skipped = skipped,

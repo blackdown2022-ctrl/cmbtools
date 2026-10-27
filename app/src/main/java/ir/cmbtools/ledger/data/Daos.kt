@@ -80,6 +80,9 @@ interface InvoiceDao {
     @Query("SELECT * FROM invoices WHERE customerId = :customerId ORDER BY issuedAtEpochDay DESC, id DESC")
     fun observeByCustomer(customerId: Long): Flow<List<Invoice>>
 
+    @Query("SELECT * FROM invoices WHERE customerId = :customerId ORDER BY issuedAtEpochDay, id")
+    suspend fun allForCustomer(customerId: Long): List<Invoice>
+
     @Query("SELECT * FROM invoices WHERE id = :id")
     fun observeById(id: Long): Flow<Invoice?>
 

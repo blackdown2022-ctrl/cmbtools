@@ -73,6 +73,13 @@ class CustomerRepository(
                 memo = if (currentRial == 0L) "مانده از قبل" else "اصلاح مانده از قبل"
             )
         )
+
+        // مانده از قبل ممکن است پس از صدور فاکتور هم وارد یا اصلاح شود.
+        // این مانده متعلق به قبل از فاکتورهاست، بنابراین عکس فوری تمام فاکتورها باید
+        // با همان اختلاف به‌روز شود تا نمایش جزئیات و ارسال دوبارهٔ پیامک مقدار تازه را نشان دهند.
+        for (invoice in invoices.allForCustomer(customerId)) {
+            invoices.update(invoice.withOpeningBalanceDelta(deltaRial))
+        }
     }
 
     suspend fun create(name: String, phone: String, cardLast4: String, note: String, creditLimitRial: Long): Long {
@@ -107,4 +114,14 @@ class CustomerRepository(
             )
         )
     }
+}
+
+/** Apply a retroactive change to the opening balance stored on an invoice snapshot. */
+internal fun Invoice.withOpeningBalanceDelta(deltaRial: Long): Invoice {
+    val previousTotalDebt = if (balanceAfterRial != 0L) balanceAfterRial
+    else ir.cmbtools.ledger.core.Money.safeSum(prevBalanceRial, totalRial)
+    return copy(
+        prevBalanceRial = ir.cmbtools.ledger.core.Money.safeSum(prevBalanceRial, deltaRial),
+        balanceAfterRial = ir.cmbtools.ledger.core.Money.safeSum(previousTotalDebt, deltaRial)
+    )
 }

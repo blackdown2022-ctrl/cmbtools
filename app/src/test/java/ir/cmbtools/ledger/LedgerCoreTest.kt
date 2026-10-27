@@ -14,6 +14,7 @@ import ir.cmbtools.ledger.sms.RenewalSmsCommandParser
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.data.Customer
 import ir.cmbtools.ledger.data.Invoice
+import ir.cmbtools.ledger.data.withOpeningBalanceDelta
 import ir.cmbtools.ledger.panel.PanelUrl
 import ir.cmbtools.ledger.sms.SmsTemplate
 import org.junit.Assert.assertEquals
@@ -945,6 +946,44 @@ class BackupPayloadTest {
         assertNull(back.settings)
         assertNull(back.panelConfig)
         assertEquals(1, back.version) // همان نسخه‌ای که در فایل نوشته شده
+    }
+}
+
+class InvoiceOpeningBalanceSnapshotTest {
+    @Test
+    fun retroactive_opening_balance_change_updates_previous_and_total_debt_snapshots() {
+        val invoice = Invoice(
+            number = "12",
+            customerId = 4,
+            issuedAtEpochDay = 10,
+            subtotalRial = 1_500_000,
+            totalRial = 1_500_000,
+            prevBalanceRial = 0,
+            balanceAfterRial = 1_500_000
+        )
+
+        val afterAddingOpeningDebt = invoice.withOpeningBalanceDelta(800_000)
+        assertEquals(800_000L, afterAddingOpeningDebt.prevBalanceRial)
+        assertEquals(2_300_000L, afterAddingOpeningDebt.balanceAfterRial)
+
+        val afterCorrectingOpeningDebt = afterAddingOpeningDebt.withOpeningBalanceDelta(-300_000)
+        assertEquals(500_000L, afterCorrectingOpeningDebt.prevBalanceRial)
+        assertEquals(2_000_000L, afterCorrectingOpeningDebt.balanceAfterRial)
+    }
+
+    @Test
+    fun reconstructs_legacy_total_snapshot_before_applying_opening_balance() {
+        val legacy = Invoice(
+            number = "13",
+            customerId = 4,
+            issuedAtEpochDay = 10,
+            totalRial = 1_500_000,
+            prevBalanceRial = 0,
+            balanceAfterRial = 0
+        )
+        val adjusted = legacy.withOpeningBalanceDelta(800_000)
+        assertEquals(800_000L, adjusted.prevBalanceRial)
+        assertEquals(2_300_000L, adjusted.balanceAfterRial)
     }
 }
 

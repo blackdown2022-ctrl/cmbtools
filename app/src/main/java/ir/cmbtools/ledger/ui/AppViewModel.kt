@@ -176,6 +176,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun customerAccounts(id: Long): Flow<List<PanelAccount>> = c.panelDao2().observeAccountsOf(id)
     fun invoiceFlow(id: Long): Flow<Invoice?> = c.invoices.observeById(id)
     fun invoiceLines(id: Long): Flow<List<InvoiceLine>> = c.invoices.observeLines(id)
+    suspend fun reconcileInvoiceOpeningBalance(id: Long) {
+        runCatching { c.invoices.reconcileOpeningBalanceSnapshot(id) }
+    }
 
     val expiringAccounts: StateFlow<List<PanelAccount>> = panelAccounts
         .map { list ->

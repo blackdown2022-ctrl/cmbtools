@@ -73,6 +73,7 @@ jobs:
 
       # گواهی انتشار مستقل از کلید debug و فقط از کش شاخهٔ main بازیابی می‌شود.
       - name: بازیابی کلید ثابت امضای انتشار
+        if: github.ref == 'refs/heads/main'
         id: release-keystore
         uses: actions/cache/restore@v4
         with:
@@ -80,6 +81,7 @@ jobs:
           key: cmbtools-release-keystore-v1
 
       - name: آماده‌سازی کلید ثابت امضای انتشار
+        if: github.ref == 'refs/heads/main'
         env:
           APP_VERSION_CODE: ${{ steps.ver.outputs.code }}
           RELEASE_STORE_PASSWORD: cmbtools-release-2026-stable
@@ -104,7 +106,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: ذخیره کلید ثابت امضای انتشار
-        if: steps.release-keystore.outputs.cache-hit != 'true'
+        if: github.ref == 'refs/heads/main' && steps.release-keystore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/cmbtools-release.p12
@@ -142,6 +144,7 @@ jobs:
           ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
 
       - name: بررسی ثبات گواهی امضای APK
+        if: github.ref == 'refs/heads/main'
         env:
           RELEASE_STORE_PASSWORD: cmbtools-release-2026-stable
           RELEASE_KEY_ALIAS: cmbtools-release
@@ -232,6 +235,11 @@ jobs:
         run: |
           VERSION="${{ steps.ver.outputs.name }}"
           CODE="${{ steps.ver.outputs.code }}"
+          if gh release list --json tagName --limit 100 \
+              | jq -e --arg prefix "v${VERSION}-" 'any(.[]; .tagName | startswith($prefix))' >/dev/null; then
+            echo "برای نسخهٔ ${VERSION} قبلاً release ساخته شده؛ از انتشار APK تکراری خودداری شد."
+            exit 0
+          fi
           cp app/build/outputs/apk/release/app-release.apk "tiznet-${VERSION}.apk"
           if [ "$CODE" -eq 31 ]; then
             NOTES="نسخهٔ انتقال به امضای پایدار APK. برای نصب این نسخه، یک‌بار برنامهٔ قبلی را حذف کنید؛ سپس APK را نصب و بکاپ را بازیابی کنید. نسخه‌های بعدی روی همین نسخه نصب می‌شوند."

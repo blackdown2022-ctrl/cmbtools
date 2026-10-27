@@ -43,7 +43,7 @@ android {
         release {
             isMinifyEnabled = false
             isDebuggable = false
-            // در CI با کلید پایدار انتشار امضا می‌شود؛ بیلد محلی، در نبود کلید، از debug استفاده می‌کند.
+            // انتشار main با کلید پایدار امضا می‌شود؛ بیلد محلی و شاخه‌های آزمایشی از debug استفاده می‌کنند.
             // هشدار «منبع ناشناس» Android همچنان ممکن است.
             signingConfig = if (releaseKeystorePath.isNullOrBlank()) {
                 signingConfigs.getByName("debug")

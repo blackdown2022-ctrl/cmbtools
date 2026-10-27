@@ -1,0 +1,30 @@
+name: نگه‌داری کلید امضای نسخه‌های اندروید
+
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+
+jobs:
+  keep-cache-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: لمس کش کلید امضای انتشار
+        id: signing-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/cmbtools-release.p12
+          key: cmbtools-release-keystore-v1
+
+      - name: اطمینان از باقی‌ماندن کلید پایدار
+        env:
+          CACHE_HIT: ${{ steps.signing-cache.outputs.cache-hit }}
+        run: |
+          if [ "$CACHE_HIT" != "true" ]; then
+            echo "کلید امضای ثابت در کش پیدا نشد؛ برای جلوگیری از انتشار امضای تازه، بررسی لازم است." >&2
+            exit 1
+          fi
+          echo "کش کلید امضای انتشار بازیابی و تازه‌سازی شد."

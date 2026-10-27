@@ -6,6 +6,11 @@ plugins {
     id("org.jetbrains.kotlin.kapt")
 }
 
+val releaseKeystorePath = System.getenv("ANDROID_RELEASE_KEYSTORE_PATH")
+val releaseStorePassword = System.getenv("ANDROID_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = System.getenv("ANDROID_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("ANDROID_RELEASE_KEY_PASSWORD")
+
 android {
     namespace = "ir.cmbtools.ledger"
     compileSdk = 34
@@ -22,13 +27,29 @@ android {
         resourceConfigurations += listOf("fa", "en")
     }
 
+    signingConfigs {
+        if (!releaseKeystorePath.isNullOrBlank()) {
+            create("stableRelease") {
+                storeFile = file(releaseKeystorePath)
+                storeType = "pkcs12"
+                storePassword = releaseStorePassword.orEmpty()
+                keyAlias = releaseKeyAlias.orEmpty()
+                keyPassword = releaseKeyPassword.orEmpty()
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             isDebuggable = false
-            // برای نصب شخصی و امکان به‌روزرسانی، CI این variant غیرقابل‌دیباگ را
-            // با همان گواهی ثابتِ cacheشده امضا می‌کند. هشدار «منبع ناشناس» Android همچنان ممکن است.
-            signingConfig = signingConfigs.getByName("debug")
+            // در CI با کلید پایدار انتشار امضا می‌شود؛ بیلد محلی، در نبود کلید، از debug استفاده می‌کند.
+            // هشدار «منبع ناشناس» Android همچنان ممکن است.
+            signingConfig = if (releaseKeystorePath.isNullOrBlank()) {
+                signingConfigs.getByName("debug")
+            } else {
+                signingConfigs.getByName("stableRelease")
+            }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

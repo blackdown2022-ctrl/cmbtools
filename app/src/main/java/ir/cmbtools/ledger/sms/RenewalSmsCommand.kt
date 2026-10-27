@@ -11,8 +11,8 @@ data class RenewalSmsCommand(val customerName: String, val gb: Double)
 
 object RenewalSmsCommandParser {
     fun parse(body: String): RenewalSmsCommand? {
-        val lines = body.replace("\r", "").split('\n').map { it.trim() }
-        if (lines.size != 3 || lines.any { it.isBlank() }) return null
+        val lines = body.replace("\r", "").split('\n').map { it.trim() }.filter { it.isNotBlank() }
+        if (lines.size != 3) return null
         if (normalizeWord(lines[0]) != "تمدید") return null
         val name = lines[1].trim()
         val gb = normalizeDigits(lines[2]).toDoubleOrNull() ?: return null
@@ -99,7 +99,12 @@ class RenewalSmsCommandProcessor(
             } else {
                 Result(
                     true,
-                    "تمدید انجام شد: ${command.customerName}، ${command.gb} گیگ / ${account.days} روز، فاکتور ${invoice.invoiceNumber}"
+                    buildString {
+                        append("تمدید انجام شد: ${command.customerName}، ${command.gb} گیگ / ${account.days} روز، فاکتور ${invoice.invoiceNumber}")
+                        if (invoice.adminReportError.isNotBlank()) {
+                            append(" | گزارش به شمارهٔ تنظیم‌شده ارسال نشد: ").append(invoice.adminReportError)
+                        }
+                    }
                 )
             }
         } catch (error: Exception) {
@@ -107,14 +112,18 @@ class RenewalSmsCommandProcessor(
         }
     }
 
-    private fun normalizeSender(value: String): String = buildString(value.length) {
-        value.forEach { char ->
-            val latinDigit = when (char) {
-                in '۰'..'۹' -> ('0'.code + (char.code - '۰'.code)).toChar()
-                in '٠'..'٩' -> ('0'.code + (char.code - '٠'.code)).toChar()
-                else -> char
+    private fun normalizeSender(value: String): String {
+        val mobile = SmsSender.normalizePhone(value)
+        if (SmsSender.isValidIranMobile(mobile)) return mobile
+        return buildString(value.length) {
+            value.forEach { char ->
+                val latinDigit = when (char) {
+                    in '۰'..'۹' -> ('0'.code + (char.code - '۰'.code)).toChar()
+                    in '٠'..'٩' -> ('0'.code + (char.code - '٠'.code)).toChar()
+                    else -> char
+                }
+                if (latinDigit.isLetterOrDigit()) append(latinDigit.lowercaseChar())
             }
-            if (latinDigit.isLetterOrDigit()) append(latinDigit.lowercaseChar())
         }
     }
 }

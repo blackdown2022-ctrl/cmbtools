@@ -650,22 +650,30 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 ) { Text("ذخیرهٔ تنظیمات پیامک") }
             }
 
-            SectionCard(title = "تمدید با پیامک فرمانی", visible = tab == SettingsTab.SMS.ordinal) {
+            SectionCard(title = "فرمان و گزارش پیامکی خصوصی", visible = tab == SettingsTab.SMS.ordinal) {
                 LabeledField(
-                    "شمارهٔ مجاز فرستنده",
+                    "شمارهٔ یگانهٔ فرمان و گزارش",
                     renewalCommandSender,
                     { renewalCommandSender = it },
                     keyboardType = KeyboardType.Phone
                 )
                 Text(
-                    "فقط پیامک از همین شماره و با قالب دقیق زیر فرمان محسوب می‌شود. نام مشتری باید دقیق باشد و اگر چند اکانت برای او باشد، فرمان رد می‌شود.",
+                    "فرمان‌ها فقط از این شماره پذیرفته می‌شوند و گزارش تمدید، واریزی و مانده فقط به همین شماره ارسال می‌شود. شمارهٔ خالی همهٔ این فرمان‌ها و گزارش‌ها را خاموش می‌کند.",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )
                 Spacer(Modifier.height(6.dp))
-                Text("تمدید\nنام مشتری\n۳۰", fontWeight = FontWeight.SemiBold)
                 Text(
-                    "حجم باید بستهٔ قیمت‌گذاری‌شده داشته باشد؛ مدت همان مدت بستهٔ فعلی اکانت می‌ماند. شمارهٔ خالی، فرمان را غیرفعال می‌کند.",
+                    "تمدید\nنام دقیق مشتری\n۳۰\n\nواریز\nنام دقیق مشتری\n۳۰۰\n\nمانده\nنام دقیق مشتری",
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "در فرمان واریز، عدد آخر در ۱۰٬۰۰۰ ضرب می‌شود (۳۰۰ = ۳٬۰۰۰٬۰۰۰ ریال) و به‌عنوان ثبت دستی ذخیره می‌شود، نه تأیید بانکی. برای واریز و استعلام، نام باید دقیق و یکتا باشد. مدت تمدید همان مدت بستهٔ فعلی اکانت است.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Text(
+                    "نمونهٔ گزارش‌ها:\nتمدید شد\nنام مشتری\nیک‌ماهه ۵۰ گیگ\n\nثبت شد\nنام مشتری\n۳٬۰۰۰٬۰۰۰ ریال\nمانده: ۱٬۰۰۰٬۰۰۰ ریال\n\nمانده حساب\nنام مشتری\nمانده: ۱٬۰۰۰٬۰۰۰ ریال",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )
@@ -677,11 +685,17 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 }
                 Button(
                     onClick = {
-                        vm.updateSettings { it.copy(renewalCommandSender = renewalCommandSender.trim()) }
-                        vm.report(if (renewalCommandSender.isBlank()) "فرمان تمدید پیامکی غیرفعال شد" else "شمارهٔ مجاز فرمان تمدید ذخیره شد")
+                        if (renewalCommandSender.isNotBlank() &&
+                            !ir.cmbtools.ledger.sms.SmsSender.isValidIranMobile(renewalCommandSender)
+                        ) {
+                            vm.report("برای فرمان و گزارش دوطرفه، یک شمارهٔ موبایل معتبر ایران وارد کنید", isError = true)
+                        } else {
+                            vm.updateSettings { it.copy(renewalCommandSender = renewalCommandSender.trim()) }
+                            vm.report(if (renewalCommandSender.isBlank()) "فرمان‌ها و گزارش‌های خصوصی پیامکی غیرفعال شد" else "شمارهٔ فرمان و مقصد گزارش پیامکی ذخیره شد")
+                        }
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("ذخیرهٔ شمارهٔ مجاز") }
+                ) { Text("ذخیرهٔ شمارهٔ فرمان و گزارش") }
                 Text(
                     "فرستندهٔ پیامک قابل جعل است؛ فقط از شماره‌ای استفاده کنید که در اختیار خودتان است و فرستنده را راز یا تأیید مستقل بانکی فرض نکنید.",
                     color = TextMuted,

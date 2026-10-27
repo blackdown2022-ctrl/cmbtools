@@ -38,7 +38,7 @@ data class AppSettings(
     val autoInvoiceOnRenew: Boolean = true,
     /** فاکتور بلافاصله با پیامک برای مشتری ارسال شود */
     val autoSmsOnInvoice: Boolean = true,
-    /** Origin address allowlist for exact three-line SMS renewal commands; blank disables commands. */
+    /** The single allowlisted sender and the only destination for private command reports; blank disables them. */
     val renewalCommandSender: String = "",
     /** اگر کاربر پنل مشتری محلی نداشت، مشتری خودکار ساخته شود */
     val autoCreateCustomerFromPanel: Boolean = true,

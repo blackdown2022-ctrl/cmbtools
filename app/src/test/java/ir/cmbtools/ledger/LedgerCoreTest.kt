@@ -7,7 +7,10 @@ import ir.cmbtools.ledger.core.InvoiceStatus
 import ir.cmbtools.ledger.core.Money
 import ir.cmbtools.ledger.core.PanelSyncRules
 import ir.cmbtools.ledger.core.Phone
+import ir.cmbtools.ledger.sms.AdminSmsCommandParser
+import ir.cmbtools.ledger.sms.AdminSmsReportFormatter
 import ir.cmbtools.ledger.sms.BankSmsParser
+import ir.cmbtools.ledger.sms.RenewalSmsCommandParser
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.data.Customer
 import ir.cmbtools.ledger.data.Invoice
@@ -153,6 +156,54 @@ class BankSmsParserTest {
         val parsed = BankSmsParser.parse("bankmelli", body, 0)
         assertTrue(parsed.isOtp)
         assertFalse(parsed.isCredit)
+    }
+}
+
+class AdminSmsCommandParserTest {
+
+    @Test
+    fun parses_manual_deposit_amount_in_ten_thousand_rial_units() {
+        val command = AdminSmsCommandParser.payment("واریز\nمحسن علیزاده\n۳۰۰")
+        assertNotNull(command)
+        assertEquals("محسن علیزاده", command?.customerName)
+        assertEquals(3_000_000L, command?.amountRial)
+    }
+
+    @Test
+    fun rejects_invalid_or_overflowing_manual_deposits() {
+        assertNull(AdminSmsCommandParser.payment("واریز\nمحسن علیزاده\n0"))
+        assertNull(AdminSmsCommandParser.payment("واریز\nمحسن علیزاده\n300ریال"))
+        assertNull(AdminSmsCommandParser.payment("واریز\nمحسن علیزاده\n999999999999999999"))
+    }
+
+    @Test
+    fun recognizes_balance_request_and_keeps_customer_name_exact() {
+        assertEquals(AdminSmsCommandParser.Kind.BALANCE, AdminSmsCommandParser.kind("مانده\nعلی رضایی"))
+        assertEquals("علی رضایی", AdminSmsCommandParser.balance("مانده\nعلی رضایی")?.customerName)
+        assertNull(AdminSmsCommandParser.balance("مانده\n"))
+    }
+
+    @Test
+    fun keeps_renewal_command_format_three_lines() {
+        val command = RenewalSmsCommandParser.parse("تمدید\nمحسن علیزاده\n۵۰")
+        assertNotNull(command)
+        assertEquals(50.0, command?.gb ?: 0.0, 0.0)
+    }
+
+    @Test
+    fun formats_renewal_payment_and_balance_reports_as_requested() {
+        assertEquals(
+            "تمدید شد\nمحسن علیزاده\nیک ماهه 50 گیگ",
+            AdminSmsReportFormatter.renewal("محسن علیزاده", "یک ماهه 50 گیگ", 50.0, 30)
+        )
+        assertEquals(
+            "ثبت شد\nمحسن علیزاده\n۳٬۰۰۰٬۰۰۰ ریال\nمانده: ۱٬۰۰۰٬۰۰۰ ریال",
+            AdminSmsReportFormatter.payment("محسن علیزاده", 3_000_000, 1_000_000)
+        )
+        assertEquals(
+            "مانده حساب\nمحسن علیزاده\nمانده: ۱٬۰۰۰٬۰۰۰ ریال",
+            AdminSmsReportFormatter.balance("محسن علیزاده", 1_000_000)
+        )
     }
 }
 

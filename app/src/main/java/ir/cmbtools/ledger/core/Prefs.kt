@@ -226,5 +226,33 @@ class Prefs(context: Context) {
         _settings.value = next
     }
 
+    /** Cloud-backup destination is device-specific and intentionally excluded from exported JSON settings. */
+    fun driveBackupFolderUri(): String? = sp.getString("driveBackupFolderUri", null)
+
+    fun setDriveBackupFolderUri(uri: String?) {
+        sp.edit().putString("driveBackupFolderUri", uri).apply()
+    }
+
+    fun isDriveBackupEnabled(): Boolean = sp.getBoolean("driveBackupEnabled", false)
+
+    fun setDriveBackupEnabled(enabled: Boolean) {
+        sp.edit().putBoolean("driveBackupEnabled", enabled).apply()
+    }
+
+    fun driveBackupLastSuccessMillis(): Long = sp.getLong("driveBackupLastSuccessMillis", 0L)
+
+    fun driveBackupLastError(): String? = sp.getString("driveBackupLastError", null)
+
+    fun setDriveBackupSuccess(atMillis: Long = System.currentTimeMillis()) {
+        sp.edit()
+            .putLong("driveBackupLastSuccessMillis", atMillis)
+            .remove("driveBackupLastError")
+            .apply()
+    }
+
+    fun setDriveBackupError(message: String) {
+        sp.edit().putString("driveBackupLastError", message).apply()
+    }
+
     val current: AppSettings get() = _settings.value
 }

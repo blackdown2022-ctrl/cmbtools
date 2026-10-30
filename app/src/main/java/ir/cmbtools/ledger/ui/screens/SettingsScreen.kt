@@ -3,6 +3,7 @@ package ir.cmbtools.ledger.ui.screens
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import ir.cmbtools.ledger.BuildConfig
@@ -54,6 +56,7 @@ import ir.cmbtools.ledger.core.Jalali
 import ir.cmbtools.ledger.core.Money
 import ir.cmbtools.ledger.core.SmsGatewayProvider
 import ir.cmbtools.ledger.core.SmsMode
+import ir.cmbtools.ledger.export.DriveBackupWorker
 import ir.cmbtools.ledger.export.ExportManager
 import ir.cmbtools.ledger.panel.PanelUrl
 import ir.cmbtools.ledger.ui.AppViewModel
@@ -65,7 +68,12 @@ import ir.cmbtools.ledger.ui.common.SectionCard
 import ir.cmbtools.ledger.ui.theme.AccentGreen
 import ir.cmbtools.ledger.ui.theme.PrimaryCyan
 import ir.cmbtools.ledger.ui.theme.TextMuted
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.text.DateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.roundToInt
 
 @Composable
@@ -77,6 +85,34 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
     val accounts by vm.panelAccounts.collectAsStateWithLifecycle()
     val panelEndpoints by vm.panelEndpoints.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val driveBackupPrefs = remember { vm.appContainer().prefs }
+    var driveBackupFolder by remember { mutableStateOf(driveBackupPrefs.driveBackupFolderUri()) }
+    var driveBackupEnabled by remember { mutableStateOf(driveBackupPrefs.isDriveBackupEnabled()) }
+    var driveBackupLastSuccess by remember { mutableStateOf(driveBackupPrefs.driveBackupLastSuccessMillis()) }
+    var driveBackupLastError by remember { mutableStateOf(driveBackupPrefs.driveBackupLastError()) }
+
+    val driveFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching {
+                val accessFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(uri, accessFlags)
+                val folder = DocumentFile.fromTreeUri(context, uri)
+                check(folder != null && folder.isDirectory && folder.canWrite()) {
+                    "این پوشه برای نوشتن پشتیبان قابل استفاده نیست"
+                }
+                driveBackupPrefs.setDriveBackupFolderUri(uri.toString())
+                driveBackupPrefs.setDriveBackupEnabled(true)
+                driveBackupFolder = uri.toString()
+                driveBackupEnabled = true
+                driveBackupLastError = null
+                DriveBackupWorker.enable(context)
+                vm.report("پوشه انتخاب شد؛ اولین پشتیبان‌گیری پس از اتصال به اینترنت انجام می‌شود")
+            }.onFailure {
+                vm.report("انتخاب پوشه ناموفق بود: ${it.message ?: "مجوز نوشتن داده نشد"}", isError = true)
+            }
+        }
+    }
+
     val sendSmsPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) vm.updateSettings { it.copy(smsMode = SmsMode.SIM) }
         else vm.report("مجوز ارسال پیامک داده نشد؛ روش درگاه پیامکی فعال می‌ماند", isError = true)
@@ -125,6 +161,18 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
 
     // هر گروه تنظیمات سربرگ (تب) جداگانه دارد تا صفحه شلوغ و تو‌در‌تو نباشد.
     var tab by remember { mutableStateOf(0) }
+
+    LaunchedEffect(tab) {
+        if (tab == SettingsTab.BACKUP.ordinal) {
+            while (isActive) {
+                driveBackupEnabled = driveBackupPrefs.isDriveBackupEnabled()
+                driveBackupFolder = driveBackupPrefs.driveBackupFolderUri()
+                driveBackupLastSuccess = driveBackupPrefs.driveBackupLastSuccessMillis()
+                driveBackupLastError = driveBackupPrefs.driveBackupLastError()
+                delay(3_000)
+            }
+        }
+    }
 
     LaunchedEffect(config) {
         config?.let {
@@ -795,7 +843,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
 
             SectionCard(title = "پشتیبان‌گیری و بازیابی", visible = tab == SettingsTab.BACKUP.ordinal) {
                 Text(
-                    "این تنها جای پشتیبان‌گیری برنامه است. فایل JSON شامل همهٔ این‌ها است:",
+                    "فایل پشتیبان کامل JSON شامل همهٔ این داده‌ها و تنظیمات است:",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.height(6.dp))
@@ -812,6 +860,82 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                         Text(line, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "بکاپ خودکار تقریباً هر ۲۴ ساعت، با اتصال اینترنت در پس‌زمینه اجرا می‌شود (اندروید ممکن است کمی تأخیر بدهد). در پنجرهٔ انتخاب پوشه، Google Drive را باز کنید؛ اگر نمایش داده نمی‌شود، برنامهٔ Drive باید نصب و به حساب شما وارد شده باشد.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                OutlinedButton(
+                    onClick = { driveFolderPicker.launch(null) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (driveBackupFolder == null) "انتخاب پوشهٔ Google Drive" else "تغییر پوشهٔ Google Drive") }
+                Text(
+                    if (driveBackupFolder == null) "پوشه‌ای انتخاب نشده است"
+                    else "مقصد بکاپ: پوشهٔ انتخاب‌شده در فضای ابری",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("بکاپ خودکار روزانه", style = MaterialTheme.typography.bodyMedium)
+                    Switch(
+                        checked = driveBackupEnabled,
+                        enabled = driveBackupFolder != null,
+                        onCheckedChange = { enabled ->
+                            if (enabled) {
+                                val selected = driveBackupFolder?.let(Uri::parse)
+                                val hasPermission = selected != null && context.contentResolver.persistedUriPermissions
+                                    .any { it.uri == selected && it.isWritePermission }
+                                if (!hasPermission) {
+                                    vm.report("مجوز پوشه از دست رفته است؛ پوشهٔ Google Drive را دوباره انتخاب کنید", isError = true)
+                                    driveBackupEnabled = false
+                                } else {
+                                    driveBackupPrefs.setDriveBackupEnabled(true)
+                                    driveBackupEnabled = true
+                                    DriveBackupWorker.enable(context)
+                                    vm.report("بکاپ خودکار فعال شد؛ اولین تلاش با اتصال اینترنت انجام می‌شود")
+                                }
+                            } else {
+                                driveBackupPrefs.setDriveBackupEnabled(false)
+                                driveBackupEnabled = false
+                                DriveBackupWorker.disable(context)
+                                vm.report("بکاپ خودکار متوقف شد؛ فایل‌های قبلی در Drive باقی می‌مانند")
+                            }
+                        }
+                    )
+                }
+                OutlinedButton(
+                    onClick = {
+                        DriveBackupWorker.backupNow(context)
+                        vm.report("درخواست بکاپ ثبت شد؛ نتیجه پس از پایان بارگذاری نمایش داده می‌شود")
+                    },
+                    enabled = driveBackupFolder != null,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("پشتیبان‌گیری در Drive همین حالا") }
+                if (driveBackupLastSuccess > 0L) {
+                    Text(
+                        "آخرین بکاپ موفق: " + DateFormat.getDateTimeInstance(
+                            DateFormat.SHORT, DateFormat.SHORT, Locale("fa", "IR")
+                        ).format(Date(driveBackupLastSuccess)),
+                        color = AccentGreen,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+                driveBackupLastError?.let { error ->
+                    Text(
+                        "آخرین تلاش ناموفق بود: $error",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+                Text(
+                    "فایل پشتیبان JSON و شامل اطلاعات مشتری و تنظیمات محرمانهٔ پنل است؛ فقط یک پوشهٔ خصوصی در Drive انتخاب کنید و آن را با دیگران به‌اشتراک نگذارید. تا ۳۰ نسخهٔ خودکار نگه داشته می‌شود.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
                 Spacer(Modifier.height(10.dp))
                 Button(
                     onClick = { saveBackupLauncher.launch("tiznet-backup.json") },
@@ -834,8 +958,8 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 ) { Text("بازیابی از فایل پشتیبان") }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "بازیابی، داده‌های فعلی را با محتوای فایل جایگزین می‌کند (قبلش یک پشتیبان تازه بگیرید). " +
-                        "فایل پشتیبان را در پوشه‌ای امن از دستگاه یا فضای شخصی نگه دارید؛ شامل اطلاعات مشتری و تنظیمات محرمانهٔ پنل است و آن را عمومی نفرستید.",
+                    "بازیابی، داده‌های فعلی را با محتوای فایل جایگزین می‌کند (قبلش یک پشتیبان تازه بگیرید). برای بازیابی نسخهٔ خودکار، دکمهٔ بازیابی را بزنید و فایل را از پوشهٔ Google Drive انتخاب کنید. " +
+                        "فایل شامل اطلاعات مشتری و تنظیمات محرمانهٔ پنل است؛ آن را فقط در فضای شخصی نگه دارید و عمومی به‌اشتراک نگذارید.",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )

@@ -123,6 +123,9 @@ class ExportManager(
         }
     }
 
+    /** Build a complete backup without opening the share sheet (used by the background worker). */
+    suspend fun createBackupFileForAutomation(): File = buildBackupFile()
+
     private suspend fun buildBackupFile(): File {
         val dao = container.backupDao()
         val payload = BackupPayload(

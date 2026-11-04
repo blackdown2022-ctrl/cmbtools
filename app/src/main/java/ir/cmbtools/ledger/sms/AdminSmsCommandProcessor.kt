@@ -59,8 +59,18 @@ object AdminSmsCommandParser {
 }
 
 object AdminSmsReportFormatter {
+    fun newAccount(customerName: String, packageName: String, gb: Double, days: Int): String =
+        subscription("کاربر جدید", customerName, packageName, gb, days)
+
     fun renewal(customerName: String, packageName: String, gb: Double, days: Int): String =
-        "تمدید شد\n$customerName\n${ir.cmbtools.ledger.core.PanelSyncRules.packageLabel(packageName, gb, days)}"
+        subscription("تمدید اشتراک", customerName, packageName, gb, days)
+
+    private fun subscription(event: String, customerName: String, packageName: String, gb: Double, days: Int): String {
+        val safeName = customerName.replace(Regex("[\\r\\n]+"), " ").trim()
+        val safePackage = ir.cmbtools.ledger.core.PanelSyncRules.packageLabel(packageName, gb, days)
+            .replace(Regex("[\\r\\n]+"), " ").trim()
+        return "$event\n$safeName\n$safePackage"
+    }
 
     fun payment(customerName: String, amountRial: Long, balanceRial: Long): String =
         "ثبت شد\n$customerName\n${Money.format(amountRial)}\nمانده: ${Money.format(balanceRial)}"

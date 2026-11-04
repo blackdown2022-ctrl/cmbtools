@@ -352,6 +352,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             message = "اکانت ساخته شد (${provision.expireInDays} روز اعتبار)",
                             subscriptionUrl = provision.subscriptionUrl
                         )
+                        val adminReport = c.billing.sendNewAccountReport(
+                            customerId = customerId,
+                            packageName = packageLabel,
+                            gb = gb,
+                            days = days
+                        )
+                        if (adminReport != null && !adminReport.ok) {
+                            result = result.copy(
+                                message = result.message + " | پیامک گزارش ساخت برای مدیر ارسال نشد: ${adminReport.message}"
+                            )
+                        }
                     } catch (e: PanelException) {
                         result = result.copy(
                             message = "فاکتور صادر شد، اما ساخت اکانت ناموفق بود: ${e.message}. " +
@@ -390,7 +401,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 days = days
             )
             c.invoices.setPanelInfo(invoiceId, provision.uuid, 1, provision.subscriptionUrl)
-            success("اکانت ساخته شد")
+            val adminReport = c.billing.sendNewAccountReport(
+                customerId = invoice.customerId,
+                packageName = invoice.packageName,
+                gb = gb,
+                days = days
+            )
+            success(
+                if (adminReport != null && !adminReport.ok) {
+                    "اکانت ساخته شد؛ اما پیامک گزارش برای مدیر ارسال نشد: ${adminReport.message}"
+                } else {
+                    "اکانت ساخته شد"
+                }
+            )
         } catch (e: Exception) {
             failure(e.message ?: "خطا در ساخت اکانت")
         } finally {
@@ -449,6 +472,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     message = "تمدید انجام شد — حجم و روز ریست شد (${provision.expireInDays} روز باقی‌مانده)",
                     subscriptionUrl = provision.subscriptionUrl
                 )
+                val adminReport = c.billing.sendRenewalReport(
+                    customerId = customerId,
+                    packageName = packageLabel,
+                    gb = gb,
+                    days = days
+                )
+                if (adminReport != null && !adminReport.ok) {
+                    result = result.copy(
+                        message = result.message + " | پیامک گزارش تمدید برای مدیر ارسال نشد: ${adminReport.message}"
+                    )
+                }
             } catch (e: Exception) {
                 result = result.copy(message = "فاکتور صادر شد، اما تمدید پنل ناموفق بود: ${e.message ?: "خطای نامشخص"}")
             }

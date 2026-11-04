@@ -83,6 +83,13 @@ class RenewalSmsCommandProcessor(
 
         return try {
             val provision = panelService.renew(account.panelUserUuid, command.gb, account.days)
+            val adminReport = billing.sendRenewalReport(
+                customerId = account.customerId,
+                packageName = price.name,
+                gb = command.gb,
+                days = account.days,
+                customerNameFallback = command.customerName
+            )
             val invoice = billing.invoiceRenewal(
                 customerId = account.customerId,
                 panelUuid = account.panelUserUuid,
@@ -95,15 +102,19 @@ class RenewalSmsCommandProcessor(
                 note = "تمدید با پیامک فرمانی"
             )
             if (!invoice.ok) {
-                Result(false, "اکانت تمدید شد، اما فاکتور صادر نشد: ${invoice.message}")
+                Result(
+                    false,
+                    "اکانت تمدید شد، اما فاکتور صادر نشد: ${invoice.message}" +
+                        (if (adminReport != null && !adminReport.ok) " | پیامک گزارش مدیر ارسال نشد: ${adminReport.message}" else "")
+                )
             } else {
                 panelService.markRenewalInvoiced(account.panelUserUuid)
                 Result(
                     true,
                     buildString {
                         append("تمدید انجام شد: ${command.customerName}، ${command.gb} گیگ / ${account.days} روز، فاکتور ${invoice.invoiceNumber}")
-                        if (invoice.adminReportError.isNotBlank()) {
-                            append(" | گزارش به شمارهٔ تنظیم‌شده ارسال نشد: ").append(invoice.adminReportError)
+                        if (adminReport != null && !adminReport.ok) {
+                            append(" | پیامک گزارش مدیر ارسال نشد: ").append(adminReport.message)
                         }
                     }
                 )

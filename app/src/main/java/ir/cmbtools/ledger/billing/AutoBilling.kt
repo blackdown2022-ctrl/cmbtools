@@ -25,8 +25,7 @@ data class BillingResult(
     val invoiceNumber: String = "",
     val totalRial: Long = 0,
     val smsSent: Boolean = false,
-    val message: String = "",
-    val adminReportError: String = ""
+    val message: String = ""
 )
 
 /** بستهٔ قیمت‌گذاری‌شده برای یک حجم/روز مشخص */
@@ -139,52 +138,66 @@ class AutoBilling(
         planId: Long = 0,
         sendSms: Boolean = settings.autoSmsOnInvoice,
         note: String = ""
-    ): BillingResult {
-        val result = try {
-            createAndNotify(
-                customerId = customerId,
-                panelUuid = panelUuid,
-                subscriptionUrl = subscriptionUrl,
-                gb = gb,
-                days = days,
-                packageName = packageName,
-                priceRial = priceRial,
-                planId = planId,
-                discountRial = 0,
-                kind = InvoiceKind.RENEW,
-                note = note.ifBlank { "تمدید" },
-                sendSms = sendSms
-            )
-        } catch (error: Exception) {
-            // پنل پیش از صدور فاکتور تمدید شده؛ حتی در خطای فاکتور هم گزارش تمدید را امتحان کن.
-            sendRenewalReport(customerId, packageName, gb, days)
-            throw error
-        }
+    ): BillingResult = createAndNotify(
+        customerId = customerId,
+        panelUuid = panelUuid,
+        subscriptionUrl = subscriptionUrl,
+        gb = gb,
+        days = days,
+        packageName = packageName,
+        priceRial = priceRial,
+        planId = planId,
+        discountRial = 0,
+        kind = InvoiceKind.RENEW,
+        note = note.ifBlank { "تمدید" },
+        sendSms = sendSms
+    )
 
-        val report = sendRenewalReport(customerId, packageName, gb, days)
-        return if (report != null && !report.ok) {
-            result.copy(
-                message = "${result.message} | گزارش تمدید به شمارهٔ تنظیم‌شده ارسال نشد: ${report.message}",
-                adminReportError = report.message
-            )
-        } else {
-            result
-        }
-    }
+    /** پیامک «کاربر جدید» فقط به همان شمارهٔ مدیر/فرمان تنظیم‌شده ارسال می‌شود. */
+    suspend fun sendNewAccountReport(
+        customerId: Long,
+        packageName: String,
+        gb: Double,
+        days: Int,
+        customerNameFallback: String = ""
+    ): ir.cmbtools.ledger.sms.SendResult? = sendSubscriptionAdminReport(
+        customerId = customerId,
+        packageName = packageName,
+        gb = gb,
+        days = days,
+        customerNameFallback = customerNameFallback,
+        bodyFactory = { name, pkg, quota, period -> AdminSmsReportFormatter.newAccount(name, pkg, quota, period) }
+    )
 
-    /** گزارش تمدید فقط به شمارهٔ مجاز ذخیره‌شده در تنظیمات می‌رود؛ خالی بودن شماره یعنی خاموش. */
+    /** گزارش تمدید فقط به همان شمارهٔ مدیر/فرمان ذخیره‌شده در تنظیمات می‌رود. */
     suspend fun sendRenewalReport(
         customerId: Long,
         packageName: String,
         gb: Double,
         days: Int,
         customerNameFallback: String = ""
+    ): ir.cmbtools.ledger.sms.SendResult? = sendSubscriptionAdminReport(
+        customerId = customerId,
+        packageName = packageName,
+        gb = gb,
+        days = days,
+        customerNameFallback = customerNameFallback,
+        bodyFactory = { name, pkg, quota, period -> AdminSmsReportFormatter.renewal(name, pkg, quota, period) }
+    )
+
+    private suspend fun sendSubscriptionAdminReport(
+        customerId: Long,
+        packageName: String,
+        gb: Double,
+        days: Int,
+        customerNameFallback: String,
+        bodyFactory: (String, String, Double, Int) -> String
     ): ir.cmbtools.ledger.sms.SendResult? {
         val recipient = settings.renewalCommandSender.trim()
         if (recipient.isBlank()) return null
         val customerName = customers.byId(customerId)?.name ?: customerNameFallback.trim()
         if (customerName.isBlank()) return null
-        val body = AdminSmsReportFormatter.renewal(customerName, packageName, gb, days)
+        val body = bodyFactory(customerName, packageName, gb, days)
         return runCatching {
             smsSender.send(settings, recipient, body, customerId = customerId)
         }.getOrElse { error ->

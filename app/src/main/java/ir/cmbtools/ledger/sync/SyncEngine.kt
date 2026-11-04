@@ -122,6 +122,7 @@ class SyncEngine(
         // هر تمدید خودکاری که همین دور برایش فاکتور صادر شد از صدور دوباره در حلقهٔ sync عادی مستثناست.
         val renewalInvoicedThisSync = mutableSetOf<String>()
         val renewalInvoicedAtThisSync = mutableMapOf<String, Long>()
+        val renewalReportedThisSync = mutableSetOf<String>()
         var discountsCorrected = 0
 
         // Renew only accounts explicitly opted in, and only after a successful panel read.
@@ -154,6 +155,17 @@ class SyncEngine(
 
                 panelRenewed = true
                 renewals++
+                renewalReportedThisSync += u.uuid
+                val adminReport = billing.sendRenewalReport(
+                    customerId = old.customerId,
+                    packageName = price.name,
+                    gb = gb,
+                    days = days,
+                    customerNameFallback = u.name
+                )
+                if (adminReport != null && !adminReport.ok) {
+                    problems += "${u.name}: پیامک گزارش تمدید به مدیر ارسال نشد: ${adminReport.message}"
+                }
                 val invoice = runCatching {
                     billing.invoiceRenewal(
                         customerId = old.customerId,
@@ -241,6 +253,22 @@ class SyncEngine(
             // زمان آخرین تمدید برای نمایش در کارت اکانت و اتصال به فاکتور موفق.
             val renewedAt = renewalInvoicedAtThisSync[u.uuid]
                 ?: if (renewed) System.currentTimeMillis() else (old?.lastRenewedAtMillis ?: 0L)
+            if (renewed && u.uuid !in renewalReportedThisSync) {
+                renewalReportedThisSync += u.uuid
+                val reportPackage = runCatching {
+                    billing.priceFor(u.usageLimitGb, u.packageDays)?.name.orEmpty()
+                }.getOrDefault("")
+                val adminReport = billing.sendRenewalReport(
+                    customerId = customerId,
+                    packageName = reportPackage,
+                    gb = u.usageLimitGb,
+                    days = u.packageDays,
+                    customerNameFallback = panelName.customerName
+                )
+                if (adminReport != null && !adminReport.ok) {
+                    problems += "${panelName.customerName}: پیامک گزارش تمدید به مدیر ارسال نشد: ${adminReport.message}"
+                }
+            }
             var initialInvoice = billing.initialInvoiceForPanelUser(u.uuid)
             val existingInitialInvoice = initialInvoice
             if (allowInvoicing && existingInitialInvoice != null && panelName.hasSuffix && panelName.discountRial != null &&
@@ -285,20 +313,12 @@ class SyncEngine(
                     if (customerId <= 0) {
                         skipped++
                         if (!ambiguousName) problems += "${u.name}: مشتری متناظر پیدا نشد"
-                        if (shouldInvoiceRenew) {
-                            sendDetectedRenewalReport(customerId, u.name, u.usageLimitGb, u.packageDays)
-                                ?.let { problems += "${u.name}: گزارش تمدید ارسال نشد: $it" }
-                        }
                     } else {
                         // ۲) قیمت: بستهٔ تعریف‌شده یا قیمت هر گیگ
                         val priced = runCatching { billing.priceFor(u.usageLimitGb, u.packageDays) }.getOrNull()
                         if (priced == null) {
                             skipped++
                             problems += "${u.name}: بستهٔ ${formatGb(u.usageLimitGb)} گیگ / ${u.packageDays} روز قیمت‌گذاری نشده"
-                            if (shouldInvoiceRenew) {
-                                sendDetectedRenewalReport(customerId, u.name, u.usageLimitGb, u.packageDays)
-                                    ?.let { problems += "${u.name}: گزارش تمدید ارسال نشد: $it" }
-                            }
                         } else {
                             val subUrl = client.subscriptionUrl(u.uuid, linkBase)
                             val result = runCatching {
@@ -392,6 +412,24 @@ class SyncEngine(
                     autoRenewEnabled = old?.autoRenewEnabled ?: false
                 )
             )
+
+            // Account creation outside the app is reported once when first observed after baseline.
+            // Existing accounts on the very first sync are deliberately not reported as new.
+            if (isNewUser && !firstRun) {
+                val reportPackage = runCatching {
+                    billing.priceFor(u.usageLimitGb, u.packageDays)?.name.orEmpty()
+                }.getOrDefault("")
+                val report = billing.sendNewAccountReport(
+                    customerId = customerId,
+                    packageName = reportPackage,
+                    gb = u.usageLimitGb,
+                    days = u.packageDays,
+                    customerNameFallback = panelName.customerName
+                )
+                if (report != null && !report.ok) {
+                    problems += "${panelName.customerName}: پیامک گزارش ساخت کاربر به مدیر ارسال نشد: ${report.message}"
+                }
+            }
         }
 
         panelDao.saveConfig(
@@ -436,23 +474,6 @@ class SyncEngine(
         val phoneFromName = billing.extractPhone(name)
         if (phoneFromName.isNotBlank()) billing.findCustomerByPhone(phoneFromName)?.let { return it.id }
         return 0
-    }
-
-    private suspend fun sendDetectedRenewalReport(
-        customerId: Long,
-        customerName: String,
-        gb: Double,
-        days: Int
-    ): String? {
-        val packageName = runCatching { billing.priceFor(gb, days)?.name.orEmpty() }.getOrDefault("")
-        val sent = billing.sendRenewalReport(
-            customerId = customerId,
-            packageName = packageName,
-            gb = gb,
-            days = days,
-            customerNameFallback = customerName
-        )
-        return sent?.takeIf { !it.ok }?.message
     }
 
     private fun formatGb(gb: Double): String =

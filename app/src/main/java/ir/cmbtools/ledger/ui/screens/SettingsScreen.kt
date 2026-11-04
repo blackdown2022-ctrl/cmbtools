@@ -705,7 +705,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     keyboardType = KeyboardType.Phone
                 )
                 Text(
-                    "فرمان‌ها فقط از این شماره پذیرفته می‌شوند و گزارش تمدید، واریزی و مانده فقط به همین شماره ارسال می‌شود. شمارهٔ خالی همهٔ این فرمان‌ها و گزارش‌ها را خاموش می‌کند.",
+                    "فرمان‌ها فقط از این شماره پذیرفته می‌شوند و گزارش ساخت کاربر، تمدید، واریزی و مانده فقط به همین شماره ارسال می‌شود. شمارهٔ خالی همهٔ این فرمان‌ها و گزارش‌ها را خاموش می‌کند.",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )
@@ -720,7 +720,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     style = MaterialTheme.typography.labelMedium
                 )
                 Text(
-                    "نمونهٔ گزارش‌ها:\nتمدید شد\nنام مشتری\nیک‌ماهه ۵۰ گیگ\n\nثبت شد\nنام مشتری\n۳٬۰۰۰٬۰۰۰ ریال\nمانده: ۱٬۰۰۰٬۰۰۰ ریال\n\nمانده حساب\nنام مشتری\nمانده: ۱٬۰۰۰٬۰۰۰ ریال",
+                    "نمونهٔ گزارش ساخت:\nکاربر جدید\nنام مشتری\nبسته\n\nنمونهٔ گزارش تمدید:\nتمدید اشتراک\nنام مشتری\nبسته\n\nثبت شد\nنام مشتری\n۳٬۰۰۰٬۰۰۰ ریال\nمانده: ۱٬۰۰۰٬۰۰۰ ریال\n\nمانده حساب\nنام مشتری\nمانده: ۱٬۰۰۰٬۰۰۰ ریال",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )

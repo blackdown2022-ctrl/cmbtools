@@ -192,10 +192,18 @@ class AdminSmsCommandParserTest {
     }
 
     @Test
-    fun formats_renewal_payment_and_balance_reports_as_requested() {
+    fun formats_new_account_renewal_payment_and_balance_reports_as_requested() {
         assertEquals(
-            "تمدید شد\nمحسن علیزاده\nیک ماهه 50 گیگ",
+            "کاربر جدید\nمحسن علیزاده\nیک ماهه 50 گیگ",
+            AdminSmsReportFormatter.newAccount("محسن علیزاده", "یک ماهه 50 گیگ", 50.0, 30)
+        )
+        assertEquals(
+            "تمدید اشتراک\nمحسن علیزاده\nیک ماهه 50 گیگ",
             AdminSmsReportFormatter.renewal("محسن علیزاده", "یک ماهه 50 گیگ", 50.0, 30)
+        )
+        assertEquals(
+            "کاربر جدید\nنام مشتری\nیک ماهه 50 گیگ",
+            AdminSmsReportFormatter.newAccount(" نام\nمشتری ", "یک ماهه 50 گیگ", 50.0, 30)
         )
         assertEquals(
             "ثبت شد\nمحسن علیزاده\n۳٬۰۰۰٬۰۰۰ ریال\nمانده: ۱٬۰۰۰٬۰۰۰ ریال",

@@ -186,12 +186,13 @@ class AdminSmsCommandParserTest {
     }
 
     @Test
-    fun parses_create_and_renew_commands_with_fourth_line_discount() {
-        val create = SubscriptionSmsCommandParser.create("ایجاد\nمحسن علیزاده\n۵۰\n۳۰۰")
+    fun parses_create_and_renew_commands_with_discount_after_volume_and_phone() {
+        val create = SubscriptionSmsCommandParser.create("ایجاد\nمحسن علیزاده\n+989121234567\n۵۰\n۳۰۰")
         assertNotNull(create)
+        assertEquals("09121234567", create?.phone)
         assertEquals(50.0, create?.gb ?: 0.0, 0.0)
         assertEquals(3_000_000L, create?.discountRial)
-        assertEquals(AdminSmsCommandParser.Kind.CREATE, AdminSmsCommandParser.kind("ایجاد\nمحسن\n۵۰\n۳۰۰"))
+        assertEquals(AdminSmsCommandParser.Kind.CREATE, AdminSmsCommandParser.kind("ایجاد\nمحسن\n۰۹۱۲۱۲۳۴۵۶۷\n۵۰\n۳۰۰"))
 
         val renewal = RenewalSmsCommandParser.parse("تمدید\nمحسن علیزاده\n۵۰\n۳۰۰")
         assertNotNull(renewal)
@@ -200,7 +201,8 @@ class AdminSmsCommandParserTest {
         assertEquals(AdminSmsCommandParser.Kind.RENEW, AdminSmsCommandParser.kind("تمدید\nمحسن\n۵۰\n۳۰۰"))
 
         assertNull(RenewalSmsCommandParser.parse("تمدید\nمحسن علیزاده\n۵۰"))
-        assertNull(SubscriptionSmsCommandParser.create("ایجاد\nمحسن\n۵۰\n999999999999999999999"))
+        assertNull(SubscriptionSmsCommandParser.create("ایجاد\nمحسن\n۰۹۱۲۱۲۳۴۵۶۷\n۵۰\n999999999999999999999"))
+        assertNull(SubscriptionSmsCommandParser.create("ایجاد\nمحسن\nشماره نامعتبر\n۵۰\n۰"))
     }
 
     @Test

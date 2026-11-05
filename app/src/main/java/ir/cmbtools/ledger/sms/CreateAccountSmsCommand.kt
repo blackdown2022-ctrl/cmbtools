@@ -1,13 +1,16 @@
 package ir.cmbtools.ledger.sms
 
 import ir.cmbtools.ledger.billing.AutoBilling
+import ir.cmbtools.ledger.core.Phone
 import ir.cmbtools.ledger.core.Prefs
+import ir.cmbtools.ledger.data.CustomerDao
 import ir.cmbtools.ledger.data.InvoiceRepository
 import ir.cmbtools.ledger.panel.PanelService
 
 /** Creates one panel account and its discounted invoice from the authorized admin SMS command. */
 class CreateAccountSmsCommandProcessor(
     private val prefs: Prefs,
+    private val customers: CustomerDao,
     private val invoices: InvoiceRepository,
     private val panelService: PanelService,
     private val billing: AutoBilling
@@ -16,12 +19,18 @@ class CreateAccountSmsCommandProcessor(
 
     suspend fun handle(body: String): Result? {
         val command = SubscriptionSmsCommandParser.create(body) ?: return null
-        val customerIds = billing.exactNameMatches(command.customerName)
+        val nameMatches = billing.exactNameMatches(command.customerName)
+        if (nameMatches.isEmpty()) {
+            return Result(false, "فرمان ایجاد رد شد: مشتری با این نام دقیق پیدا نشد")
+        }
+        val customerIds = nameMatches.filter { id ->
+            customers.byId(id)?.phone?.let { Phone.normalize(it) } == command.phone
+        }
         if (customerIds.size != 1) {
             return Result(
                 false,
-                if (customerIds.isEmpty()) "فرمان ایجاد رد شد: مشتری با این نام دقیق پیدا نشد"
-                else "فرمان ایجاد رد شد: نام مشتری تکراری است"
+                if (customerIds.isEmpty()) "فرمان ایجاد رد شد: شماره با شمارهٔ ثبت‌شدهٔ این مشتری تطبیق ندارد"
+                else "فرمان ایجاد رد شد: نام و شماره برای بیش از یک مشتری یکسان است"
             )
         }
         val customerId = customerIds.single()

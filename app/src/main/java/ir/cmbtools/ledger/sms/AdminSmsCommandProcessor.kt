@@ -143,7 +143,7 @@ class AdminSmsCommandProcessor(
                     val result = createProcessor.handle(body)
                     if (result == null) Result(
                         false,
-                        "قالب فرمان ایجاد نامعتبر است؛ قالب: ایجاد، نام مشتری، حجم به گیگ، تخفیف در واحد ۱۰٬۰۰۰ ریالی"
+                        "قالب فرمان ایجاد نامعتبر است؛ قالب: ایجاد، نام مشتری، شمارهٔ موبایل، حجم به گیگ، تخفیف در واحد ۱۰٬۰۰۰ ریالی"
                     ) else Result(result.success, result.message)
                 }
             }

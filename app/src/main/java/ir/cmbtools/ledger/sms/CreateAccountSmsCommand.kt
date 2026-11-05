@@ -3,9 +3,47 @@ package ir.cmbtools.ledger.sms
 import ir.cmbtools.ledger.billing.AutoBilling
 import ir.cmbtools.ledger.core.Phone
 import ir.cmbtools.ledger.core.Prefs
+import ir.cmbtools.ledger.data.Customer
 import ir.cmbtools.ledger.data.CustomerDao
 import ir.cmbtools.ledger.data.InvoiceRepository
 import ir.cmbtools.ledger.panel.PanelService
+
+internal sealed interface SmsCustomerResolution {
+    data class Existing(val customer: Customer) : SmsCustomerResolution
+    data object Create : SmsCustomerResolution
+    data class Reject(val reason: String) : SmsCustomerResolution
+}
+
+/** Resolve SMS customer identity without ever assigning a phone already owned by another record. */
+internal fun resolveSmsCustomer(
+    namedCustomers: List<Customer>,
+    allCustomers: List<Customer>,
+    normalizedPhone: String
+): SmsCustomerResolution {
+    val phoneOwners = allCustomers.filter { Phone.normalize(it.phone) == normalizedPhone }
+    if (phoneOwners.size > 1) {
+        return SmsCustomerResolution.Reject("این شماره برای بیش از یک مشتری ثبت شده است؛ ابتدا اطلاعات مشتریان را اصلاح کنید")
+    }
+    val phoneOwner = phoneOwners.singleOrNull()
+    if (phoneOwner != null) {
+        if (phoneOwner.archived) {
+            return SmsCustomerResolution.Reject("این شماره متعلق به مشتری بایگانی‌شده است؛ ابتدا مشتری را از بایگانی خارج کنید")
+        }
+        if (namedCustomers.any { it.id == phoneOwner.id }) {
+            return SmsCustomerResolution.Existing(phoneOwner)
+        }
+        val reason = if (namedCustomers.isNotEmpty()) {
+            "شماره با شمارهٔ ثبت‌شدهٔ این مشتری تطبیق ندارد"
+        } else {
+            "این شماره قبلاً برای مشتری دیگری ثبت شده است"
+        }
+        return SmsCustomerResolution.Reject(reason)
+    }
+    if (namedCustomers.isNotEmpty()) {
+        return SmsCustomerResolution.Reject("شماره با شمارهٔ ثبت‌شدهٔ این مشتری تطبیق ندارد")
+    }
+    return SmsCustomerResolution.Create
+}
 
 /** Creates one panel account and its discounted invoice from the authorized admin SMS command. */
 class CreateAccountSmsCommandProcessor(
@@ -20,20 +58,17 @@ class CreateAccountSmsCommandProcessor(
     suspend fun handle(body: String): Result? {
         val command = SubscriptionSmsCommandParser.create(body) ?: return null
         val nameMatches = billing.exactNameMatches(command.customerName)
-        if (nameMatches.isEmpty()) {
-            return Result(false, "فرمان ایجاد رد شد: مشتری با این نام دقیق پیدا نشد")
+        val resolution = resolveSmsCustomer(
+            namedCustomers = nameMatches.mapNotNull { customers.byId(it) },
+            allCustomers = customers.all(),
+            normalizedPhone = command.phone
+        )
+        if (resolution is SmsCustomerResolution.Reject) {
+            return Result(false, "فرمان ایجاد رد شد: ${resolution.reason}")
         }
-        val customerIds = nameMatches.filter { id ->
-            customers.byId(id)?.phone?.let { Phone.normalize(it) } == command.phone
-        }
-        if (customerIds.size != 1) {
-            return Result(
-                false,
-                if (customerIds.isEmpty()) "فرمان ایجاد رد شد: شماره با شمارهٔ ثبت‌شدهٔ این مشتری تطبیق ندارد"
-                else "فرمان ایجاد رد شد: نام و شماره برای بیش از یک مشتری یکسان است"
-            )
-        }
-        val customerId = customerIds.single()
+        val existingCustomer = (resolution as? SmsCustomerResolution.Existing)?.customer
+        val createCustomer = resolution is SmsCustomerResolution.Create
+
         val plan = billing.priceForVolume(command.gb)
             ?: return Result(
                 false,
@@ -49,6 +84,22 @@ class CreateAccountSmsCommandProcessor(
             return Result(false, "فرمان ایجاد رد شد: اتصال پنل در تنظیمات کامل نیست؛ فاکتوری ساخته نشد")
         }
 
+        val customerId = existingCustomer?.id ?: try {
+            customers.insert(
+                Customer(
+                    name = command.customerName.trim(),
+                    phone = command.phone,
+                    note = "ثبت‌شده از فرمان پیامکی ایجاد"
+                )
+            )
+        } catch (error: Exception) {
+            return Result(false, "فرمان ایجاد رد شد: ثبت مشتری جدید ناموفق بود: ${error.message ?: "خطای پایگاه داده"}")
+        }
+        if (customerId <= 0L) {
+            return Result(false, "فرمان ایجاد رد شد: شناسهٔ مشتری جدید معتبر نیست")
+        }
+        val customerCreated = existingCustomer == null
+
         val invoice = billing.invoiceNewAccount(
             customerId = customerId,
             panelUuid = "",
@@ -62,7 +113,10 @@ class CreateAccountSmsCommandProcessor(
             sendSms = false,
             note = "ایجاد با فرمان پیامکی"
         )
-        if (!invoice.ok) return Result(false, "فرمان ایجاد رد شد: ${invoice.message}")
+        if (!invoice.ok) {
+            val prefix = if (customerCreated) "مشتری جدید ثبت شد، اما " else ""
+            return Result(false, "${prefix}فاکتور صادر نشد: ${invoice.message}")
+        }
 
         val provision = try {
             panelService.createAccount(customerId, plan.gb, plan.days)
@@ -90,6 +144,7 @@ class CreateAccountSmsCommandProcessor(
             Result(
                 true,
                 buildString {
+                    if (customerCreated) append("مشتری جدید ثبت شد؛ ")
                     append("اکانت ساخته شد و فاکتور ${invoice.invoiceNumber} صادر شد")
                     if (command.discountRial > 0L) {
                         append("؛ تخفیف ${ir.cmbtools.ledger.core.Money.format(command.discountRial)} ریال")

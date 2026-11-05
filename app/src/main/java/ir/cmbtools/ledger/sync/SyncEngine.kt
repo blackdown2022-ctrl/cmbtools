@@ -201,7 +201,12 @@ class SyncEngine(
         }
 
         for (u in users) {
-            val old = known[u.uuid]
+            val snapshotOld = known[u.uuid]
+            val localOld = panelDao.byPanelUuid(u.uuid)
+            // Prefer the latest local row so concurrent UI/SMS creations or renewals are not
+            // mistaken for external events and are not inserted a second time.
+            val old = localOld ?: snapshotOld
+            val wasCreatedLocallyAfterSnapshot = snapshotOld == null && localOld != null
             val panelName = PanelCustomerNames.discountSuffix(u.name)
             val resolvedCustomerId = resolveCustomerId(u.comment, panelName.customerName)
             val ambiguousName = resolvedCustomerId <= 0 && billing.exactNameMatches(u.name).size > 1
@@ -253,7 +258,9 @@ class SyncEngine(
             // زمان آخرین تمدید برای نمایش در کارت اکانت و اتصال به فاکتور موفق.
             val renewedAt = renewalInvoicedAtThisSync[u.uuid]
                 ?: if (renewed) System.currentTimeMillis() else (old?.lastRenewedAtMillis ?: 0L)
-            if (renewed && u.uuid !in renewalReportedThisSync) {
+            val renewalReportedByConcurrentLocalAction = renewed && old != null &&
+                (panelDao.byPanelUuid(u.uuid)?.lastRenewedAtMillis ?: 0L) > old.lastRenewedAtMillis
+            if (renewed && u.uuid !in renewalReportedThisSync && !renewalReportedByConcurrentLocalAction) {
                 renewalReportedThisSync += u.uuid
                 val reportPackage = runCatching {
                     billing.priceFor(u.usageLimitGb, u.packageDays)?.name.orEmpty()
@@ -415,7 +422,7 @@ class SyncEngine(
 
             // Account creation outside the app is reported once when first observed after baseline.
             // Existing accounts on the very first sync are deliberately not reported as new.
-            if (isNewUser && !firstRun) {
+            if (isNewUser && !firstRun && !wasCreatedLocallyAfterSnapshot) {
                 val reportPackage = runCatching {
                     billing.priceFor(u.usageLimitGb, u.packageDays)?.name.orEmpty()
                 }.getOrDefault("")

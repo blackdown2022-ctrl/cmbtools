@@ -3,6 +3,7 @@ package ir.cmbtools.ledger.data
 import ir.cmbtools.ledger.core.InvoiceStatus
 import ir.cmbtools.ledger.core.Jalali
 import ir.cmbtools.ledger.core.Money
+import ir.cmbtools.ledger.core.PanelSyncRules
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
@@ -57,15 +58,36 @@ class ReportingRepository(
             val monthExpenses = expenses.between(monthStart.toEpochDay(), today.toEpochDay())
 
             val revenueMonth = monthPayments.sumOf { it.amountRial }
-            val expiring = accounts.count {
-                it.expireEpochDay in 1..(today.toEpochDay() + 7) && it.enabled
-            }
+            val todayEpochDay = today.toEpochDay()
+            val activeAccountUuids = accounts.asSequence()
+                .filter {
+                    PanelSyncRules.isActiveAccount(
+                        enabled = it.enabled,
+                        status = it.status,
+                        remainingDays = it.remainingDays,
+                        expireEpochDay = it.expireEpochDay,
+                        todayEpochDay = todayEpochDay,
+                        usageGb = it.usageGb,
+                        limitGb = it.gb
+                    )
+                }
+                .map { it.panelUserUuid }
+                .filter { it.isNotBlank() }
+                .toSet()
+            val expiring = accounts.asSequence()
+                .filter {
+                    it.panelUserUuid in activeAccountUuids &&
+                        it.expireEpochDay in (todayEpochDay + 1)..(todayEpochDay + 7)
+                }
+                .map { it.panelUserUuid }
+                .distinct()
+                .count()
             DashboardSummary(
                 revenueThisMonthRial = revenueMonth,
                 revenueTodayRial = todayInvoices.sumOf { it.totalRial },
                 totalReceivableRial = receivable,
                 unallocatedCreditRial = monthPayments.sumOf { it.unallocatedRial },
-                activeAccounts = accounts.count { it.enabled },
+                activeAccounts = activeAccountUuids.size,
                 expiringIn7Days = expiring,
                 unmatchedBankSms = unmatched.size,
                 customersCount = customerList.size,

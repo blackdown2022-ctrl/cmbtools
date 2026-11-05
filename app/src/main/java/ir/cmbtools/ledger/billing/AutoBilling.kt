@@ -57,11 +57,27 @@ class AutoBilling(
 
     // ─────────────────────────────────────────────────────────── قیمت‌گذاری
 
+    /** Resolve a package by its GB value alone; SMS creation rejects non-unique matches. */
+    suspend fun priceForVolume(gb: Double): PricedPlan? {
+        if (!gb.isFinite() || gb <= 0.0) return null
+        val matches = plans.activeOnce().filter {
+            kotlin.math.abs(it.gb.toDouble() - gb) <= PanelSyncRules.GB_TOLERANCE
+        }
+        if (matches.size != 1) return null
+        val plan = matches.single()
+        return PricedPlan(
+            planId = plan.id,
+            name = plan.name,
+            gb = plan.gb.toDouble(),
+            days = plan.days,
+            priceRial = plan.priceRial,
+            matchedExistingPlan = true
+        )
+    }
+
     /**
-     * قیمت یک بستهٔ حجم/روز:
-     * ۱) بستهٔ تعریف‌شده در صفحهٔ «بسته‌ها» (تطبیق حجم و روز)
-     * ۲) اگر نبود، «قیمت هر گیگ» تنظیمات
-     * ۳) اگر هیچ‌کدام نبود → null (فاکتور ساخته نمی‌شود؛ بهتر از فاکتور با مبلغ صفر)
+     * قیمت یک بستهٔ حجم/روز: بستهٔ تعریف‌شده در «بسته‌ها» یا نرخ هر گیگ.
+     * اگر هیچ‌کدام تعریف نشده باشد، null برمی‌گردد تا فاکتور صفر ساخته نشود.
      */
     suspend fun priceFor(gb: Double, days: Int): PricedPlan? {
         val all: List<Plan> = plans.activeOnce()
@@ -136,6 +152,7 @@ class AutoBilling(
         packageName: String,
         priceRial: Long,
         planId: Long = 0,
+        discountRial: Long = 0,
         sendSms: Boolean = settings.autoSmsOnInvoice,
         note: String = ""
     ): BillingResult = createAndNotify(
@@ -147,7 +164,7 @@ class AutoBilling(
         packageName = packageName,
         priceRial = priceRial,
         planId = planId,
-        discountRial = 0,
+        discountRial = discountRial,
         kind = InvoiceKind.RENEW,
         note = note.ifBlank { "تمدید" },
         sendSms = sendSms

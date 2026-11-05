@@ -11,6 +11,31 @@ object PanelSyncRules {
     const val GB_TOLERANCE = 0.6
 
     /**
+     * تعریف واحد «اکانت فعال» برای داشبورد: روشن، بسته هنوز منقضی نشده،
+     * سهمیه تمام نشده و وضعیت پنل هم صریحاً غیرفعال/منقضی نباشد.
+     */
+    fun isActiveAccount(
+        enabled: Boolean,
+        status: String,
+        remainingDays: Int,
+        expireEpochDay: Long,
+        todayEpochDay: Long,
+        usageGb: Double,
+        limitGb: Double
+    ): Boolean {
+        if (!enabled || remainingDays <= 0) return false
+        if (expireEpochDay > 0 && expireEpochDay <= todayEpochDay) return false
+        if (limitGb > 0.0 && usageGb >= limitGb) return false
+        val normalizedStatus = status.trim().lowercase().replace(' ', '_').replace('-', '_')
+        return normalizedStatus !in INACTIVE_STATUSES
+    }
+
+    private val INACTIVE_STATUSES = setOf(
+        "disabled", "expired", "no_data", "inactive", "not_active", "limited", "blocked", "revoked",
+        "suspended", "on_hold", "hold", "deleted", "غیرفعال", "منقضی", "بدون_داده", "محدود", "مسدود", "حذف_شده"
+    )
+
+    /**
      * آیا این تغییرات «تمدید» است؟
      *
      * **تعریف تمدید در این اپ:** ریست سهمیهٔ حجم یا آغاز دوبارهٔ دورهٔ زمانی.

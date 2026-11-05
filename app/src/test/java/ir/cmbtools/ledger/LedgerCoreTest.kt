@@ -11,6 +11,7 @@ import ir.cmbtools.ledger.sms.AdminSmsCommandParser
 import ir.cmbtools.ledger.sms.AdminSmsReportFormatter
 import ir.cmbtools.ledger.sms.BankSmsParser
 import ir.cmbtools.ledger.sms.RenewalSmsCommandParser
+import ir.cmbtools.ledger.sms.SubscriptionSmsCommandParser
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.data.Customer
 import ir.cmbtools.ledger.data.Invoice
@@ -185,10 +186,21 @@ class AdminSmsCommandParserTest {
     }
 
     @Test
-    fun keeps_renewal_command_format_three_lines() {
-        val command = RenewalSmsCommandParser.parse("تمدید\nمحسن علیزاده\n۵۰")
-        assertNotNull(command)
-        assertEquals(50.0, command?.gb ?: 0.0, 0.0)
+    fun parses_create_and_renew_commands_with_fourth_line_discount() {
+        val create = SubscriptionSmsCommandParser.create("ایجاد\nمحسن علیزاده\n۵۰\n۳۰۰")
+        assertNotNull(create)
+        assertEquals(50.0, create?.gb ?: 0.0, 0.0)
+        assertEquals(3_000_000L, create?.discountRial)
+        assertEquals(AdminSmsCommandParser.Kind.CREATE, AdminSmsCommandParser.kind("ایجاد\nمحسن\n۵۰\n۳۰۰"))
+
+        val renewal = RenewalSmsCommandParser.parse("تمدید\nمحسن علیزاده\n۵۰\n۳۰۰")
+        assertNotNull(renewal)
+        assertEquals(50.0, renewal?.gb ?: 0.0, 0.0)
+        assertEquals(3_000_000L, renewal?.discountRial)
+        assertEquals(AdminSmsCommandParser.Kind.RENEW, AdminSmsCommandParser.kind("تمدید\nمحسن\n۵۰\n۳۰۰"))
+
+        assertNull(RenewalSmsCommandParser.parse("تمدید\nمحسن علیزاده\n۵۰"))
+        assertNull(SubscriptionSmsCommandParser.create("ایجاد\nمحسن\n۵۰\n999999999999999999999"))
     }
 
     @Test
@@ -239,6 +251,34 @@ class SmsTemplateTest {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class PanelSyncRulesTest {
+
+    @Test
+    fun active_account_requires_enabled_unexpired_service_with_remaining_quota() {
+        fun active(
+            enabled: Boolean = true,
+            status: String = "active",
+            remainingDays: Int = 10,
+            expireEpochDay: Long = 20_010,
+            usageGb: Double = 5.0,
+            limitGb: Double = 10.0
+        ) = PanelSyncRules.isActiveAccount(
+            enabled = enabled,
+            status = status,
+            remainingDays = remainingDays,
+            expireEpochDay = expireEpochDay,
+            todayEpochDay = 20_000,
+            usageGb = usageGb,
+            limitGb = limitGb
+        )
+
+        assertTrue(active())
+        assertFalse(active(enabled = false))
+        assertFalse(active(status = "expired"))
+        assertFalse(active(status = "no_data"))
+        assertFalse(active(remainingDays = 0))
+        assertFalse(active(expireEpochDay = 20_000))
+        assertFalse(active(usageGb = 10.0))
+    }
 
     @Test
     fun detects_renewal_only_when_expiry_moves_forward() {

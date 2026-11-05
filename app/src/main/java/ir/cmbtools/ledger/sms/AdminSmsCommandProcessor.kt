@@ -17,12 +17,13 @@ import java.time.LocalDate
 
 /** Parser for SMS commands and reports that are private to the configured administrator number. */
 object AdminSmsCommandParser {
-    enum class Kind { RENEW, PAYMENT, BALANCE }
+    enum class Kind { CREATE, RENEW, PAYMENT, BALANCE }
 
     data class PaymentCommand(val customerName: String, val amountRial: Long)
     data class BalanceCommand(val customerName: String)
 
     fun kind(body: String): Kind? = when (normalizeWord(commandLines(body).firstOrNull().orEmpty())) {
+        "ایجاد" -> Kind.CREATE
         "تمدید" -> Kind.RENEW
         "واریز" -> Kind.PAYMENT
         "مانده" -> Kind.BALANCE
@@ -80,7 +81,7 @@ object AdminSmsReportFormatter {
 }
 
 /**
- * Processes renewal, manual payment, and balance-query commands only from the configured number.
+ * Processes account creation, renewal, manual payment, and balance-query commands only from the configured number.
  * A manual payment command is recorded as a user instruction, never as bank-SMS evidence.
  */
 class AdminSmsCommandProcessor(
@@ -92,7 +93,8 @@ class AdminSmsCommandProcessor(
     private val billing: AutoBilling,
     private val payments: PaymentRepository,
     private val smsSender: SmsSender,
-    private val renewalProcessor: RenewalSmsCommandProcessor
+    private val renewalProcessor: RenewalSmsCommandProcessor,
+    private val createProcessor: CreateAccountSmsCommandProcessor
 ) {
     data class Result(
         val success: Boolean,
@@ -134,12 +136,24 @@ class AdminSmsCommandProcessor(
         val commandHash = sha256("$sender|$body|$deduplicationTime")
 
         return when (kind) {
+            AdminSmsCommandParser.Kind.CREATE -> {
+                if (!claimCommand(sender, body, receivedAtMillis, commandHash, "ایجاد")) {
+                    Result(false, "این فرمان قبلاً دریافت شده است", duplicate = true)
+                } else {
+                    val result = createProcessor.handle(body)
+                    if (result == null) Result(
+                        false,
+                        "قالب فرمان ایجاد نامعتبر است؛ قالب: ایجاد، نام مشتری، حجم به گیگ، تخفیف در واحد ۱۰٬۰۰۰ ریالی"
+                    ) else Result(result.success, result.message)
+                }
+            }
+
             AdminSmsCommandParser.Kind.RENEW -> {
                 if (!claimCommand(sender, body, receivedAtMillis, commandHash, "تمدید")) {
                     Result(false, "این فرمان قبلاً دریافت شده است", duplicate = true)
                 } else {
                     val result = renewalProcessor.handle(sender, body)
-                    if (result == null) Result(false, "قالب فرمان تمدید نامعتبر است؛ قالب: تمدید، نام مشتری، حجم به گیگ")
+                    if (result == null) Result(false, "قالب فرمان تمدید نامعتبر است؛ قالب: تمدید، نام مشتری، حجم به گیگ، تخفیف در واحد ۱۰٬۰۰۰ ریالی")
                     else Result(result.success, result.message)
                 }
             }

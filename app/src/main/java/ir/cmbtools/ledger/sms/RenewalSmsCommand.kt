@@ -6,38 +6,12 @@ import ir.cmbtools.ledger.data.PanelDao
 import ir.cmbtools.ledger.panel.PanelService
 import kotlin.math.abs
 
-/** Strict parser for the three-line renewal command. */
-data class RenewalSmsCommand(val customerName: String, val gb: Double)
+/** Compatibility wrapper around the strict four-line subscription command parser. */
+data class RenewalSmsCommand(val customerName: String, val gb: Double, val discountRial: Long)
 
 object RenewalSmsCommandParser {
-    fun parse(body: String): RenewalSmsCommand? {
-        val lines = body.replace("\r", "").split('\n').map { it.trim() }.filter { it.isNotBlank() }
-        if (lines.size != 3) return null
-        if (normalizeWord(lines[0]) != "تمدید") return null
-        val name = lines[1].trim()
-        val gb = normalizeDigits(lines[2]).toDoubleOrNull() ?: return null
-        if (name.isBlank() || !gb.isFinite() || gb <= 0.0 || gb > 100_000.0) return null
-        return RenewalSmsCommand(name, gb)
-    }
-
-    private fun normalizeWord(value: String): String = value
-        .replace('ي', 'ی')
-        .replace('ك', 'ک')
-        .replace("\u200c", "")
-        .replace("ـ", "")
-        .trim()
-
-    private fun normalizeDigits(value: String): String = buildString(value.length) {
-        value.forEach { char ->
-            append(
-                when (char) {
-                    in '۰'..'۹' -> ('0'.code + (char.code - '۰'.code)).toChar()
-                    in '٠'..'٩' -> ('0'.code + (char.code - '٠'.code)).toChar()
-                    '٫' -> '.'
-                    else -> char
-                }
-            )
-        }
+    fun parse(body: String): RenewalSmsCommand? = SubscriptionSmsCommandParser.renewal(body)?.let {
+        RenewalSmsCommand(it.customerName, it.gb, it.discountRial)
     }
 }
 
@@ -80,6 +54,12 @@ class RenewalSmsCommandProcessor(
 
         val price = billing.priceFor(command.gb, account.days)
             ?: return Result(false, "فرمان تمدید رد شد: برای ${command.gb} گیگ / ${account.days} روز قیمت تعریف نشده است")
+        if (price.priceRial <= 0L) {
+            return Result(false, "فرمان تمدید رد شد: قیمت بستهٔ انتخاب‌شده معتبر نیست")
+        }
+        if (command.discountRial > price.priceRial) {
+            return Result(false, "فرمان تمدید رد شد: تخفیف از قیمت بسته بیشتر است")
+        }
 
         return try {
             val provision = panelService.renew(account.panelUserUuid, command.gb, account.days)
@@ -99,6 +79,7 @@ class RenewalSmsCommandProcessor(
                 packageName = price.name,
                 priceRial = price.priceRial,
                 planId = price.planId,
+                discountRial = command.discountRial,
                 note = "تمدید با پیامک فرمانی"
             )
             if (!invoice.ok) {
@@ -113,6 +94,9 @@ class RenewalSmsCommandProcessor(
                     true,
                     buildString {
                         append("تمدید انجام شد: ${command.customerName}، ${command.gb} گیگ / ${account.days} روز، فاکتور ${invoice.invoiceNumber}")
+                        if (command.discountRial > 0L) {
+                            append("، تخفیف ${ir.cmbtools.ledger.core.Money.format(command.discountRial)}")
+                        }
                         if (adminReport != null && !adminReport.ok) {
                             append(" | پیامک گزارش مدیر ارسال نشد: ").append(adminReport.message)
                         }

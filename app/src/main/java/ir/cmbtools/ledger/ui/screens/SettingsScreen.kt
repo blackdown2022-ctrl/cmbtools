@@ -120,7 +120,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
     val receiveSmsPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         vm.report(
             if (granted) "مجوز دریافت پیامک فعال شد"
-            else "مجوز دریافت پیامک داده نشد؛ فرمان تمدید پیامکی کار نخواهد کرد",
+            else "مجوز دریافت پیامک داده نشد؛ فرمان‌های ایجاد و تمدید پیامکی کار نخواهند کرد",
             isError = !granted
         )
     }
@@ -711,11 +711,11 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "تمدید\nنام دقیق مشتری\n۳۰\n\nواریز\nنام دقیق مشتری\n۳۰۰\n\nمانده\nنام دقیق مشتری",
+                    "ایجاد\nنام دقیق مشتری\n۵۰\n۳۰۰\n\nتمدید\nنام دقیق مشتری\n۵۰\n۳۰۰\n\nواریز\nنام دقیق مشتری\n۳۰۰\n\nمانده\nنام دقیق مشتری",
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "در فرمان واریز، عدد آخر در ۱۰٬۰۰۰ ضرب می‌شود (۳۰۰ = ۳٬۰۰۰٬۰۰۰ ریال) و به‌عنوان ثبت دستی ذخیره می‌شود، نه تأیید بانکی. برای واریز و استعلام، نام باید دقیق و یکتا باشد. مدت تمدید همان مدت بستهٔ فعلی اکانت است.",
+                    "در فرمان‌های ایجاد و تمدید، خط چهارم تخفیف است و در ۱۰٬۰۰۰ ضرب می‌شود (۳۰۰ = ۳٬۰۰۰٬۰۰۰ ریال)؛ حجم باید با یک بستهٔ فعال یکتا تطبیق کند. مدت تمدید همان بستهٔ فعلی اکانت است. در فرمان واریز، عدد آخر هم در ۱۰٬۰۰۰ ضرب می‌شود، اما فقط ثبت دستی است و تأیید بانکی نیست. برای همهٔ فرمان‌ها نام مشتری باید دقیق و یکتا باشد.",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )

@@ -8,25 +8,27 @@ import org.junit.Test
 
 class RenewalSmsCommandParserTest {
     @Test
-    fun parsesThreeLineCommandWithPersianDigitsAndCrLf() {
+    fun parsesFourLineCommandWithPersianDigitsAndCrLf() {
         assertEquals(
-            RenewalSmsCommand(customerName = "مشتری نمونه", gb = 30.0),
-            RenewalSmsCommandParser.parse("تمدید\r\nمشتری نمونه\r\n۳۰")
+            RenewalSmsCommand(customerName = "مشتری نمونه", gb = 30.0, discountRial = 3_000_000L),
+            RenewalSmsCommandParser.parse("تمدید\r\nمشتری نمونه\r\n۳۰\r\n۳۰۰")
         )
     }
 
     @Test
-    fun rejectsExtraLinesAndInvalidVolume() {
-        assertNull(RenewalSmsCommandParser.parse("تمدید\nمشتری نمونه\n۳۰\nاضافی"))
-        assertNull(RenewalSmsCommandParser.parse("تمدید\nمشتری نمونه\nصفر"))
+    fun rejectsOldThreeLineFormatExtraLinesAndInvalidValues() {
+        assertNull(RenewalSmsCommandParser.parse("تمدید\nمشتری نمونه\n۳۰"))
+        assertNull(RenewalSmsCommandParser.parse("تمدید\nمشتری نمونه\n۳۰\nاضافی\n۱"))
+        assertNull(RenewalSmsCommandParser.parse("تمدید\nمشتری نمونه\nصفر\n۰"))
+        assertNull(RenewalSmsCommandParser.parse("تمدید\nمشتری نمونه\n۳۰\n۹۹۹۹۹۹۹۹۹۹۹۹۹۹۹۹۹۹۹۹۹"))
     }
 
     @Test
     fun acceptsArabicTextVariantsButRequiresExactCommandWord() {
         assertEquals(
-            RenewalSmsCommand("مشتری نمونه", 20.0),
-            RenewalSmsCommandParser.parse("تمد\u064aد\nمشتری نمونه\n٢٠")
+            RenewalSmsCommand("مشتری نمونه", 20.0, 50_000L),
+            RenewalSmsCommandParser.parse("تمد\u064aد\nمشتری نمونه\n٢٠\n٥")
         )
-        assertNull(RenewalSmsCommandParser.parse("تمدید کن\nمشتری نمونه\n۲۰"))
+        assertNull(RenewalSmsCommandParser.parse("تمدید کن\nمشتری نمونه\n۲۰\n۰"))
     }
 }

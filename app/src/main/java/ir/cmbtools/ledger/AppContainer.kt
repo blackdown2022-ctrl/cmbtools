@@ -54,6 +54,7 @@ class AppContainer(context: Context) {
     val renewalSmsCommandProcessor = RenewalSmsCommandProcessor(prefs, panelDao, panelService, billing)
     val createAccountSmsCommandProcessor = CreateAccountSmsCommandProcessor(
         prefs = prefs,
+        customers = customersDao,
         invoices = invoices,
         panelService = panelService,
         billing = billing

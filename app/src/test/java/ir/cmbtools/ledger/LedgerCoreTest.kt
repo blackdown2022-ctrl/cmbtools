@@ -12,6 +12,8 @@ import ir.cmbtools.ledger.sms.AdminSmsReportFormatter
 import ir.cmbtools.ledger.sms.BankSmsParser
 import ir.cmbtools.ledger.sms.RenewalSmsCommandParser
 import ir.cmbtools.ledger.sms.SubscriptionSmsCommandParser
+import ir.cmbtools.ledger.sms.SmsCustomerResolution
+import ir.cmbtools.ledger.sms.resolveSmsCustomer
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.data.Customer
 import ir.cmbtools.ledger.data.Invoice
@@ -203,6 +205,40 @@ class AdminSmsCommandParserTest {
         assertNull(RenewalSmsCommandParser.parse("تمدید\nمحسن علیزاده\n۵۰"))
         assertNull(SubscriptionSmsCommandParser.create("ایجاد\nمحسن\n۰۹۱۲۱۲۳۴۵۶۷\n۵۰\n999999999999999999999"))
         assertNull(SubscriptionSmsCommandParser.create("ایجاد\nمحسن\nشماره نامعتبر\n۵۰\n۰"))
+    }
+
+    @Test
+    fun create_sms_creates_unknown_customer_and_reuses_it_on_retry() {
+        val phone = "09121234567"
+        assertEquals(SmsCustomerResolution.Create, resolveSmsCustomer(emptyList(), emptyList(), phone))
+
+        val created = Customer(id = 17, name = "مشتری تازه", phone = phone)
+        assertEquals(
+            SmsCustomerResolution.Existing(created),
+            resolveSmsCustomer(listOf(created), listOf(created), phone)
+        )
+    }
+
+    @Test
+    fun create_sms_refuses_phone_already_owned_by_another_customer() {
+        val owner = Customer(id = 18, name = "مشتری دیگر", phone = "09121234567")
+        val result = resolveSmsCustomer(emptyList(), listOf(owner), "09121234567")
+        assertTrue(result is SmsCustomerResolution.Reject)
+        assertTrue((result as SmsCustomerResolution.Reject).reason.contains("قبلاً"))
+
+        val archived = owner.copy(archived = true)
+        val archivedResult = resolveSmsCustomer(emptyList(), listOf(archived), "09121234567")
+        assertTrue(archivedResult is SmsCustomerResolution.Reject)
+        assertTrue((archivedResult as SmsCustomerResolution.Reject).reason.contains("بایگانی‌شده"))
+
+        val duplicateOwner = owner.copy(id = 19, name = "مشتری سوم")
+        val duplicateResult = resolveSmsCustomer(
+            listOf(owner),
+            listOf(owner, duplicateOwner),
+            "09121234567"
+        )
+        assertTrue(duplicateResult is SmsCustomerResolution.Reject)
+        assertTrue((duplicateResult as SmsCustomerResolution.Reject).reason.contains("بیش از یک مشتری"))
     }
 
     @Test

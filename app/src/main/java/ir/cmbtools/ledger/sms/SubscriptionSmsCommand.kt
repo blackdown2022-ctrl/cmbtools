@@ -43,7 +43,7 @@ object SubscriptionSmsCommandParser {
         value.forEach { char ->
             append(
                 when (char) {
-                    in '۰'..'۹' -> ('0'.code + (char.code - '۰'.code')).toChar()
+                    in '۰'..'۹' -> ('0'.code + (char.code - '۰'.code)).toChar()
                     in '٠'..'٩' -> ('0'.code + (char.code - '٠'.code)).toChar()
                     '٫' -> '.'
                     else -> char

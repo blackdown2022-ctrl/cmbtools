@@ -75,6 +75,7 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
     var showEdit by remember { mutableStateOf(false) }
     var showVoid by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
+    var showDeleteLocally by remember { mutableStateOf(false) }
 
     val customer = invoice?.let { inv -> customers.firstOrNull { it.customer.id == inv.customerId }?.customer }
 
@@ -239,9 +240,17 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
                         }
                     }
                     Spacer(Modifier.height(8.dp))
+                    OutlinedButton(onClick = { showDeleteLocally = true }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.height(18.dp), tint = AccentRed)
+                        Text(" حذف فقط فاکتور از اپ", color = AccentRed)
+                    }
+                    Spacer(Modifier.height(6.dp))
                     OutlinedButton(onClick = { showDelete = true }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.height(18.dp), tint = AccentRed)
-                        Text(" حذف کامل فاکتور", color = AccentRed)
+                        Text(
+                            if (inv.panelUserUuid.isNotBlank()) " حذف کامل فاکتور و اکانت پنل" else " حذف کامل فاکتور",
+                            color = AccentRed
+                        )
                     }
                 }
             } ?: Text("فاکتور پیدا نشد", color = TextMuted)
@@ -309,12 +318,25 @@ fun InvoiceDetailScreen(vm: AppViewModel, invoiceId: Long, nav: NavHostControlle
         )
     }
 
+    if (showDeleteLocally) {
+        ConfirmDialog(
+            title = "حذف فقط فاکتور از اپ",
+            text = "فاکتور و ردیف‌هایش از اپ حذف می‌شوند، اما اکانت و دسترسی آن در پنل باقی می‌ماند. پرداخت‌های تخصیص‌یافته به اعتبار آزاد مشتری برمی‌گردند و فاکتور اولیهٔ حذف‌شده در همگام‌سازی خودکار دوباره ساخته نمی‌شود. این کار برگشت‌پذیر نیست.",
+            confirmText = "فقط از اپ حذف کن",
+            onConfirm = {
+                vm.deleteInvoiceLocally(invoiceId) { nav.popBackStack() }
+                showDeleteLocally = false
+            },
+            onDismiss = { showDeleteLocally = false }
+        )
+    }
+
     if (showDelete) {
         ConfirmDialog(
             title = "حذف کامل فاکتور",
             text = "این کار برگشت‌پذیر نیست. خود فاکتور و ردیف‌هایش حذف می‌شود. پرداخت‌های تخصیص‌یافته به اعتبار آزاد مشتری برمی‌گردد." +
                 if (invoice?.panelUserUuid?.isNotBlank() == true) " اکانت متصل در پنل هیدی‌فای هم ابتدا حذف می‌شود؛ اگر پنل در دسترس نباشد، فاکتور محلی حذف نخواهد شد." else "",
-            confirmText = "حذف فاکتور",
+            confirmText = "حذف کامل",
             onConfirm = {
                 vm.deleteInvoice(invoiceId) { nav.popBackStack() }
                 showDelete = false

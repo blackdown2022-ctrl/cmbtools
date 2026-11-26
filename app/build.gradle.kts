@@ -22,8 +22,8 @@ android {
         // ── نسخه‌بندی ────────────────────────────────────────────────
         // برای هر آپدیت: versionCode یکی زیاد شود و versionName طبق قاعدهٔ زیر:
         //   تغییر بزرگ → 1.0.0     قابلیت جدید → 0.x.0     رفع باگ → 0.x.y
-        versionCode = 38
-        versionName = "0.12.16"
+        versionCode = 39
+        versionName = "0.12.17"
         resourceConfigurations += listOf("fa", "en")
     }
 

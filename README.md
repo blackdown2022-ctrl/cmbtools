@@ -187,7 +187,7 @@ POST   /<proxy>/api/v2/admin/users/bulk/    افزودن حجم و روز (add_l
 - **لینک اشتراک** در پیامک فاکتور نمی‌آید (در تب «پنل» پروفایل مشتری با دکمهٔ «کپی لینک»).
 
 متغیرهای قابل استفاده در قالب (تنظیمات ← سربرگ پیامک):
-`{customer} {invoiceNo} {datetime} {date} {package} {items} {total} {prevBalance} {totalDebt} {debt} {card} {kind} {footer}`
+`{customer} {invoiceNo} {datetime} {date} {package} {items} {subtotal} {discount} {net} {total} {prevBalance} {totalDebt} {debt} {card} {kind} {footer}`
 
 ---
 

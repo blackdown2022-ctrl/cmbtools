@@ -653,7 +653,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 )
                 Text(
                     "متغیرها: {customer} {invoiceNo} {datetime} {date} {package} {kind} " +
-                        "{items} {total} {discount} {prevBalance} {totalDebt} {debt} {card} {footer}",
+                        "{items} {subtotal} {discount} {net} {total} {prevBalance} {totalDebt} {debt} {card} {footer}",
                     color = TextMuted,
                     style = MaterialTheme.typography.labelMedium
                 )

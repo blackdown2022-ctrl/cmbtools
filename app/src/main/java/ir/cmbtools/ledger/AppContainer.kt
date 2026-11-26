@@ -13,6 +13,7 @@ import ir.cmbtools.ledger.panel.PanelService
 import ir.cmbtools.ledger.sms.AdminSmsCommandProcessor
 import ir.cmbtools.ledger.sms.CreateAccountSmsCommandProcessor
 import ir.cmbtools.ledger.sms.PaymentMatcher
+import ir.cmbtools.ledger.sms.PaymentReceiptNotifier
 import ir.cmbtools.ledger.sms.RenewalSmsCommandProcessor
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.sync.SyncEngine
@@ -45,8 +46,9 @@ class AppContainer(context: Context) {
 
     val panelClient = PanelClient(panelDao, prefs)
     val panelService = PanelService(panelClient, panelDao, customersDao, prefs)
-    val matcher = PaymentMatcher(bankSmsDao, customersDao, invoicesDao, payments, prefs)
     val smsSender = SmsSender(appContext, outboxDao)
+    val paymentReceiptNotifier = PaymentReceiptNotifier(customersDao, ledgerDao, prefs, smsSender)
+    val matcher = PaymentMatcher(bankSmsDao, customersDao, invoicesDao, payments, prefs, paymentReceiptNotifier)
     val seed = SeedData(customersDao, plansDao, panelDao)
 
     /** موتور صورت‌حساب خودکار (فاکتور + پیامک) — مشترک بین UI و همگام‌سازی پس‌زمینه */
@@ -68,6 +70,7 @@ class AppContainer(context: Context) {
         billing = billing,
         payments = payments,
         smsSender = smsSender,
+        paymentReceiptNotifier = paymentReceiptNotifier,
         renewalProcessor = renewalSmsCommandProcessor,
         createProcessor = createAccountSmsCommandProcessor
     )

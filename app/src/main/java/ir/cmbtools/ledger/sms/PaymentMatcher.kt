@@ -29,11 +29,17 @@ class PaymentMatcher(
     private val customerDao: CustomerDao,
     private val invoiceDao: InvoiceDao,
     private val payments: PaymentRepository,
-    private val prefs: Prefs
+    private val prefs: Prefs,
+    private val paymentReceipts: PaymentReceiptNotifier
 ) {
 
     sealed class Result {
-        data class AutoMatched(val customerName: String, val invoiceNumber: String, val amountRial: Long) : Result()
+        data class AutoMatched(
+            val customerName: String,
+            val invoiceNumber: String,
+            val amountRial: Long,
+            val receiptSms: SendResult? = null
+        ) : Result()
         data class NeedsReview(val reason: String, val amountRial: Long) : Result()
         data class Ignored(val reason: String) : Result()
         data object Duplicate : Result()
@@ -104,12 +110,14 @@ class PaymentMatcher(
     }
 
     /** تأیید دستی: کاربر در UI مشتری/فاکتور را انتخاب می‌کند */
+    data class ManualConfirmation(val paymentId: Long, val receiptSms: SendResult?)
+
     suspend fun confirmManually(
         smsId: Long,
         customerId: Long,
         invoiceId: Long = 0,
         note: String = ""
-    ): Long {
+    ): ManualConfirmation {
         val sms = bankSmsDao.byId(smsId) ?: error("پیامک پیدا نشد")
         val payment = payments.record(
             customerId = customerId,
@@ -121,7 +129,8 @@ class PaymentMatcher(
             preferredInvoiceId = invoiceId
         )
         bankSmsDao.markMatched(smsId, MatchStatus.MANUAL, payment.paymentId, note)
-        return payment.paymentId
+        val receipt = paymentReceipts.send(customerId, sms.amountRial)
+        return ManualConfirmation(payment.paymentId, receipt)
     }
 
     private suspend fun settle(
@@ -145,12 +154,14 @@ class PaymentMatcher(
             preferredInvoiceId = invoiceId
         )
         bankSmsDao.markMatched(smsId, status, payment.paymentId, "تطبیق خودکار")
+        val receipt = paymentReceipts.send(customerId, parsed.amountRial)
         val customer = customerDao.byId(customerId)
         val invoice = invoiceDao.byId(invoiceId)
         return Result.AutoMatched(
             customerName = customer?.name ?: "",
             invoiceNumber = invoice?.number ?: "",
-            amountRial = parsed.amountRial
+            amountRial = parsed.amountRial,
+            receiptSms = receipt
         )
     }
 

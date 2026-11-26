@@ -538,7 +538,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             .onFailure { failure(it.message ?: "خطا") }
     }
 
-    /** حذف فاکتور؛ اکانت متصل در پنل اول حذف می‌شود، سپس داده‌های محلی اتمیک پاک می‌شوند. */
+    /** حذف کامل: اکانت متصل از پنل هم حذف می‌شود. */
     fun deleteInvoice(id: Long, onDeleted: () -> Unit = {}) = viewModelScope.launch {
         _busy.value = true
         try {
@@ -554,6 +554,29 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             onDeleted()
         } catch (e: Exception) {
             failure(e.message ?: "حذف فاکتور ناموفق بود؛ چیزی از سوابق محلی پاک نشد")
+        } finally {
+            _busy.value = false
+        }
+    }
+
+    /** حذف فقط محلی؛ اکانت پنل و اتصال آن حفظ می‌شود. */
+    fun deleteInvoiceLocally(id: Long, onDeleted: () -> Unit = {}) = viewModelScope.launch {
+        _busy.value = true
+        try {
+            val invoice = c.invoices.get(id) ?: error("فاکتور پیدا نشد")
+            c.db.withTransaction {
+                c.invoices.delete(id)
+                if (invoice.kind == InvoiceKind.NEW && invoice.panelUserUuid.isNotBlank()) {
+                    c.panelDao2().suppressInitialInvoice(invoice.panelUserUuid)
+                }
+            }
+            success(
+                if (invoice.panelUserUuid.isBlank()) "فاکتور فقط از اپ حذف شد"
+                else "فاکتور از اپ حذف شد؛ اکانت پنل حفظ شد"
+            )
+            onDeleted()
+        } catch (e: Exception) {
+            failure(e.message ?: "حذف محلی فاکتور ناموفق بود؛ اکانت پنل دست‌نخورده ماند")
         } finally {
             _busy.value = false
         }

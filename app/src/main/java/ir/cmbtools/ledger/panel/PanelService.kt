@@ -211,7 +211,8 @@ class PanelService(
                 lastInvoicedExpireEpochDay = user.expireEpochDay,
                 lastRenewedAtMillis = now,
                 lastInvoicedRenewalAtMillis = existing?.lastInvoicedRenewalAtMillis ?: 0L,
-                autoRenewEnabled = existing?.autoRenewEnabled ?: false
+                autoRenewEnabled = existing?.autoRenewEnabled ?: false,
+                initialInvoiceSuppressed = existing?.initialInvoiceSuppressed ?: false
             )
         )
         return AccountProvisionResult(

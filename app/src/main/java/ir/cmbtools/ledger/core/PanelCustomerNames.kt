@@ -33,8 +33,9 @@ object PanelCustomerNames {
         firstSync: Boolean,
         wasKnownBefore: Boolean,
         alreadyHasInvoice: Boolean,
-        hasDiscountSuffix: Boolean
-    ): Boolean = !alreadyHasInvoice && (
+        hasDiscountSuffix: Boolean,
+        invoiceSuppressed: Boolean = false
+    ): Boolean = !alreadyHasInvoice && !invoiceSuppressed && (
         hasDiscountSuffix || (autoInvoiceEnabled && !firstSync && !wasKnownBefore)
     )
 

@@ -304,7 +304,8 @@ class SyncEngine(
                 firstSync = firstRun,
                 wasKnownBefore = !isNewUser,
                 alreadyHasInvoice = hasInitialInvoice,
-                hasDiscountSuffix = panelName.hasSuffix
+                hasDiscountSuffix = panelName.hasSuffix,
+                invoiceSuppressed = old?.initialInvoiceSuppressed ?: false
             )
 
             if (firstRun && !shouldInvoiceNew) {
@@ -416,7 +417,8 @@ class SyncEngine(
                     lastRenewedAtMillis = renewedAt,
                     lastInvoicedRenewalAtMillis = renewalInvoicedAtThisSync[u.uuid]
                         ?: (old?.lastInvoicedRenewalAtMillis ?: 0L),
-                    autoRenewEnabled = old?.autoRenewEnabled ?: false
+                    autoRenewEnabled = old?.autoRenewEnabled ?: false,
+                    initialInvoiceSuppressed = old?.initialInvoiceSuppressed ?: false
                 )
             )
 

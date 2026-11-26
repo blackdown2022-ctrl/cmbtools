@@ -24,7 +24,7 @@ import ir.cmbtools.ledger.core.InvoiceNumbering
         BankSms::class,
         SmsOutbox::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -188,6 +188,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** ۱۰ → ۱۱: ثبت حذف محلی فاکتور اولیه برای جلوگیری از صدور خودکار دوباره. */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE panel_accounts ADD COLUMN initialInvoiceSuppressed INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         private fun reconcileOpeningBalanceSnapshots(db: SupportSQLiteDatabase) {
             val openingCurrent = """
                 (SELECT COALESCE(SUM(CASE WHEN direction = 'DEBIT' THEN amountRial ELSE -amountRial END), 0)
@@ -207,7 +214,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "cmb-ledger.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                 .build()
     }
 }

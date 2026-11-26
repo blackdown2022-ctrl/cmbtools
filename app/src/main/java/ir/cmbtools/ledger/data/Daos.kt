@@ -290,6 +290,9 @@ interface PanelDao {
     @Query("UPDATE panel_accounts SET autoRenewEnabled = :enabled WHERE panelUserUuid = :uuid")
     suspend fun setAutoRenew(uuid: String, enabled: Boolean)
 
+    @Query("UPDATE panel_accounts SET initialInvoiceSuppressed = 1 WHERE panelUserUuid = :uuid")
+    suspend fun suppressInitialInvoice(uuid: String)
+
     @Query("SELECT * FROM panel_accounts WHERE panelUserUuid = :uuid LIMIT 1")
     suspend fun byPanelUuid(uuid: String): PanelAccount?
 

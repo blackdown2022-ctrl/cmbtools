@@ -260,6 +260,8 @@ data class PanelAccount(
     val lastInvoicedRenewalAtMillis: Long = 0,
     /** Auto-renew on depleted quota or expired days; intentionally off for all existing accounts. */
     val autoRenewEnabled: Boolean = false,
+    /** Prevent automatic recreation of an initial invoice explicitly deleted only from the app. */
+    val initialInvoiceSuppressed: Boolean = false,
     val syncedAt: Long = System.currentTimeMillis()
 )
 

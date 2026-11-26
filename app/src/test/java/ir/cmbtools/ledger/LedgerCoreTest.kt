@@ -1210,6 +1210,7 @@ class PanelCustomerNamesTest {
         assertFalse(rules.shouldInvoiceInitialAccount(true, false, false, true, true))
         assertTrue(rules.shouldInvoiceInitialAccount(false, true, true, false, true))
         assertFalse(rules.shouldInvoiceInitialAccount(false, true, true, false, false))
+        assertFalse(rules.shouldInvoiceInitialAccount(true, false, true, false, true, invoiceSuppressed = true))
     }
 
     @Test

@@ -93,6 +93,7 @@ class AdminSmsCommandProcessor(
     private val billing: AutoBilling,
     private val payments: PaymentRepository,
     private val smsSender: SmsSender,
+    private val paymentReceiptNotifier: PaymentReceiptNotifier,
     private val renewalProcessor: RenewalSmsCommandProcessor,
     private val createProcessor: CreateAccountSmsCommandProcessor
 ) {
@@ -211,12 +212,18 @@ class AdminSmsCommandProcessor(
         if (outcome.duplicate) return Result(false, "این فرمان قبلاً دریافت شده است", duplicate = true)
         if (outcome.error.isNotBlank()) return Result(false, "واریز ثبت نشد: ${outcome.error}")
 
+        val customerReceipt = paymentReceiptNotifier.send(outcome.customerId, outcome.amountRial)
         val report = AdminSmsReportFormatter.payment(outcome.customerName, outcome.amountRial, outcome.balanceRial)
         val sent = sendReport(configuredNumber, authorizedSender, outcome.customerId, report)
+        val receiptMessage = when {
+            customerReceipt == null -> ""
+            customerReceipt.ok -> "؛ رسید واریزی برای مشتری پیامک شد"
+            else -> "؛ رسید مشتری ارسال نشد: ${customerReceipt.message}"
+        }
         return Result(
             true,
-            if (sent.ok) "واریزی ثبت شد و گزارش به شمارهٔ مجاز ارسال شد"
-            else "واریزی ثبت شد، اما ارسال گزارش ناموفق بود: ${sent.message}"
+            (if (sent.ok) "واریزی ثبت شد و گزارش به شمارهٔ مجاز ارسال شد"
+            else "واریزی ثبت شد، اما ارسال گزارش ناموفق بود: ${sent.message}") + receiptMessage
         )
     }
 

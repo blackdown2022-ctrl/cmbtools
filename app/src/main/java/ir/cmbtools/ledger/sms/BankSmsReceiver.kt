@@ -51,8 +51,14 @@ class BankSmsReceiver : BroadcastReceiver() {
 
     private fun notifyUser(context: Context, app: LedgerApp, result: PaymentMatcher.Result) {
         val (title, text) = when (result) {
-            is PaymentMatcher.Result.AutoMatched -> "پرداخت ثبت شد" to
-                "${Money.format(result.amountRial)} از ${result.customerName} برای فاکتور ${result.invoiceNumber}"
+            is PaymentMatcher.Result.AutoMatched -> "پرداخت ثبت شد" to buildString {
+                append("${Money.format(result.amountRial)} از ${result.customerName} برای فاکتور ${result.invoiceNumber}")
+                when {
+                    result.receiptSms == null -> Unit
+                    result.receiptSms.ok -> append("؛ رسید پیامکی برای مشتری ارسال شد")
+                    else -> append("؛ رسید مشتری ارسال نشد: ${result.receiptSms.message}")
+                }
+            }
             is PaymentMatcher.Result.NeedsReview -> "پیامک بانکی در انتظار تطبیق" to
                 "${Money.format(result.amountRial)} - ${result.reason}"
             is PaymentMatcher.Result.Ignored -> return

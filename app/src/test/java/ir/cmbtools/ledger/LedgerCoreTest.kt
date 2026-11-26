@@ -13,6 +13,7 @@ import ir.cmbtools.ledger.sms.BankSmsParser
 import ir.cmbtools.ledger.sms.RenewalSmsCommandParser
 import ir.cmbtools.ledger.sms.SubscriptionSmsCommandParser
 import ir.cmbtools.ledger.sms.SmsCustomerResolution
+import ir.cmbtools.ledger.sms.PaymentReceiptSmsFormatter
 import ir.cmbtools.ledger.sms.resolveSmsCustomer
 import ir.cmbtools.ledger.sms.SmsSender
 import ir.cmbtools.ledger.data.Customer
@@ -185,6 +186,14 @@ class AdminSmsCommandParserTest {
         assertEquals(AdminSmsCommandParser.Kind.BALANCE, AdminSmsCommandParser.kind("مانده\nعلی رضایی"))
         assertEquals("علی رضایی", AdminSmsCommandParser.balance("مانده\nعلی رضایی")?.customerName)
         assertNull(AdminSmsCommandParser.balance("مانده\n"))
+    }
+
+    @Test
+    fun formats_customer_payment_receipt_with_amount_and_current_balance() {
+        assertEquals(
+            "علی رضایی گرامی، واریزی شما به مبلغ ۱٬۲۳۴٬۰۰۰ ریال ثبت گردید. مانده حساب شما ۵۰۰٬۰۰۰ ریال می‌باشد.",
+            PaymentReceiptSmsFormatter.format("علی رضایی\n", 1_234_000L, 500_000L)
+        )
     }
 
     @Test

@@ -571,7 +571,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         preferredInvoiceId: Long = 0,
         onDone: (String) -> Unit = {}
     ) = viewModelScope.launch {
-        runCatching {
+        val paymentResult = try {
             if (amountRial <= 0) error("مبلغ را وارد کنید")
             c.payments.record(
                 customerId = customerId,
@@ -582,25 +582,38 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 note = note,
                 preferredInvoiceId = preferredInvoiceId
             )
-        }.onSuccess { r ->
-            val msg = buildString {
-                if (r.allocatedRial > 0) append("${Money.format(r.allocatedRial)} به فاکتورها تخصیص یافت")
-                if (r.unallocatedRial > 0) {
-                    if (isNotEmpty()) append(" | ")
-                    append("${Money.format(r.unallocatedRial)} به‌عنوان اعتبار مشتری ثبت شد")
-                }
+        } catch (error: Exception) {
+            failure(error.message ?: "خطا در ثبت پرداخت")
+            return@launch
+        }
+        val receipt = c.paymentReceiptNotifier.send(customerId, amountRial)
+        val msg = buildString {
+            if (paymentResult.allocatedRial > 0) append("${Money.format(paymentResult.allocatedRial)} به فاکتورها تخصیص یافت")
+            if (paymentResult.unallocatedRial > 0) {
+                if (isNotEmpty()) append(" | ")
+                append("${Money.format(paymentResult.unallocatedRial)} به‌عنوان اعتبار مشتری ثبت شد")
             }
-            success(msg.ifBlank { "پرداخت ثبت شد" })
-            onDone(msg)
-        }.onFailure { failure(it.message ?: "خطا در ثبت پرداخت") }
+            if (receipt != null) {
+                if (isNotEmpty()) append(" | ")
+                append(if (receipt.ok) "رسید واریزی برای مشتری پیامک شد" else "رسید پیامکی ارسال نشد: ${receipt.message}")
+            }
+        }
+        success(msg.ifBlank { "پرداخت ثبت شد" })
+        onDone(msg)
     }
 
     fun confirmBankSms(smsId: Long, customerId: Long, invoiceId: Long) = viewModelScope.launch {
         runCatching {
             if (customerId <= 0) error("مشتری را انتخاب کنید")
             c.matcher.confirmManually(smsId, customerId, invoiceId)
-        }.onSuccess { success("پرداخت از پیامک ثبت و تطبیق شد") }
-            .onFailure { failure(it.message ?: "خطا در تطبیق") }
+        }.onSuccess { result ->
+            val receiptMessage = when {
+                result.receiptSms == null -> ""
+                result.receiptSms.ok -> "؛ رسید برای مشتری پیامک شد"
+                else -> "؛ رسید پیامکی ارسال نشد: ${result.receiptSms.message}"
+            }
+            success("پرداخت از پیامک ثبت و تطبیق شد$receiptMessage")
+        }.onFailure { failure(it.message ?: "خطا در تطبیق") }
     }
 
     fun ignoreBankSms(smsId: Long) = viewModelScope.launch {

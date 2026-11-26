@@ -617,7 +617,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED
                 ) {
                     Spacer(Modifier.height(8.dp))
-                    Text("برای ارسال فاکتور از سیم‌کارت، مجوز ارسال پیامک را فعال کنید.", color = TextMuted)
+                    Text("برای ارسال فاکتور و رسید واریزی از سیم‌کارت، مجوز ارسال پیامک را فعال کنید.", color = TextMuted)
                     OutlinedButton(
                         onClick = { sendSmsPermissionLauncher.launch(Manifest.permission.SEND_SMS) },
                         modifier = Modifier.fillMaxWidth()
@@ -637,6 +637,13 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     Spacer(Modifier.height(8.dp))
                     LabeledField("شمارهٔ خط/فرستنده", gatewaySender, { gatewaySender = it })
                 }
+                Spacer(Modifier.height(8.dp))
+                SwitchLine(
+                    title = "ارسال پیامک رسید واریزی",
+                    hint = "پس از ثبت هر پرداخت، مبلغ و ماندهٔ به‌روز حساب برای مشتری ارسال می‌شود",
+                    checked = settings.autoSmsOnPayment,
+                    onChange = { enabled -> vm.updateSettings { it.copy(autoSmsOnPayment = enabled) } }
+                )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "پیامک فاکتور با نام مشتری شروع می‌شود؛ نام فروشگاه و لینک اشتراک در آن درج نمی‌شود.",

@@ -38,6 +38,8 @@ data class AppSettings(
     val autoInvoiceOnRenew: Boolean = true,
     /** فاکتور بلافاصله با پیامک برای مشتری ارسال شود */
     val autoSmsOnInvoice: Boolean = true,
+    /** پس از ثبت پرداخت، رسید و ماندهٔ حساب برای مشتری پیامک شود */
+    val autoSmsOnPayment: Boolean = true,
     /** The single allowlisted sender and the only destination for private command reports; blank disables them. */
     val renewalCommandSender: String = "",
     /** اگر کاربر پنل مشتری محلی نداشت، مشتری خودکار ساخته شود */
@@ -202,6 +204,7 @@ class Prefs(context: Context) {
             autoInvoiceOnNewAccount = sp.getBoolean("autoInvoiceOnNewAccount", true),
             autoInvoiceOnRenew = sp.getBoolean("autoInvoiceOnRenew", true),
             autoSmsOnInvoice = sp.getBoolean("autoSmsOnInvoice", true),
+            autoSmsOnPayment = sp.getBoolean("autoSmsOnPayment", defaults.autoSmsOnPayment),
             renewalCommandSender = sp.getString("renewalCommandSender", "") ?: "",
             autoCreateCustomerFromPanel = sp.getBoolean("autoCreateCustomerFromPanel", true),
             paymentCardNumber = sp.getString("paymentCardNumber", "") ?: "",
@@ -232,6 +235,7 @@ class Prefs(context: Context) {
             .putBoolean("autoInvoiceOnNewAccount", next.autoInvoiceOnNewAccount)
             .putBoolean("autoInvoiceOnRenew", next.autoInvoiceOnRenew)
             .putBoolean("autoSmsOnInvoice", next.autoSmsOnInvoice)
+            .putBoolean("autoSmsOnPayment", next.autoSmsOnPayment)
             .putString("renewalCommandSender", next.renewalCommandSender)
             .putBoolean("autoCreateCustomerFromPanel", next.autoCreateCustomerFromPanel)
             .putString("paymentCardNumber", next.paymentCardNumber)

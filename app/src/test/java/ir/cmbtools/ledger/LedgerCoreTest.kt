@@ -575,8 +575,30 @@ class InvoiceTemplateTest {
             emptyList(),
             ""
         )
-        assertTrue(body.contains("مبلغ: ۱٬۰۰۰٬۰۰۰ ریال"))
+        assertTrue(body.contains("مبلغ بسته: ۱٬۵۰۰٬۰۰۰ ریال"))
         assertTrue(body.contains("تخفیف: ۵۰۰٬۰۰۰ ریال"))
+        assertTrue(body.contains("جمع: ۱٬۰۰۰٬۰۰۰ ریال"))
+        assertTrue(body.indexOf("مبلغ بسته:") < body.indexOf("تخفیف:"))
+        assertTrue(body.indexOf("تخفیف:") < body.indexOf("جمع:"))
+    }
+
+    @Test
+    fun invoice_breakdown_order_is_package_discount_total_then_existing_balance() {
+        val body = SmsTemplate.render(
+            AppSettings(),
+            invoice(total = 1_000_000, discount = 200_000, prevBalance = 800_000, balanceAfter = 1_800_000),
+            customer,
+            emptyList(),
+            ""
+        )
+        val packageIndex = body.indexOf("مبلغ بسته: ۱٬۲۰۰٬۰۰۰ ریال")
+        val discountIndex = body.indexOf("تخفیف: ۲۰۰٬۰۰۰ ریال")
+        val totalIndex = body.indexOf("جمع: ۱٬۰۰۰٬۰۰۰ ریال")
+        val balanceIndex = body.indexOf("مانده قبلی: ۸۰۰٬۰۰۰ ریال")
+        assertTrue(packageIndex >= 0)
+        assertTrue(packageIndex < discountIndex)
+        assertTrue(discountIndex < totalIndex)
+        assertTrue(totalIndex < balanceIndex)
     }
 
     @Test
@@ -617,7 +639,7 @@ class InvoiceTemplateTest {
     @Test
     fun defaults_to_structured_template() {
         val t = AppSettings.DEFAULT_INVOICE_TEMPLATE
-        listOf("{customer}", "{invoiceNo}", "{datetime}", "{package}", "{total}", "{discount}", "{debt}", "{card}")
+        listOf("{customer}", "{invoiceNo}", "{datetime}", "{package}", "{subtotal}", "{discount}", "{net}", "{debt}", "{card}")
             .forEach { assertTrue("قالب پیش‌فرض باید $it را داشته باشد", t.contains(it)) }
         // نام فروشگاه و لینک اشتراک از قالب حذف شده‌اند
         assertFalse(t.contains("{business}"))
@@ -673,6 +695,9 @@ class InvoiceTemplateTest {
         assertTrue(AppSettings.V03_INVOICE_TEMPLATE.contains("{link}"))
         assertFalse(AppSettings.DEFAULT_INVOICE_TEMPLATE.contains("{business}"))
         assertFalse(AppSettings.DEFAULT_INVOICE_TEMPLATE.contains("{link}"))
+        assertTrue(AppSettings.PREVIOUS_DEFAULT_INVOICE_TEMPLATE.contains("{total}"))
+        assertTrue(AppSettings.DEFAULT_INVOICE_TEMPLATE.indexOf("{subtotal}") < AppSettings.DEFAULT_INVOICE_TEMPLATE.indexOf("{discount}"))
+        assertTrue(AppSettings.DEFAULT_INVOICE_TEMPLATE.indexOf("{discount}") < AppSettings.DEFAULT_INVOICE_TEMPLATE.indexOf("{net}"))
     }
 }
 

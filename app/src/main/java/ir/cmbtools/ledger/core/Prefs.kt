@@ -58,7 +58,7 @@ data class AppSettings(
          *
          * متغیرهای قابل استفاده:
          *  {customer} {invoiceNo} {datetime} {date} {package} {items}
-         *  {total} {discount} {prevBalance} {totalDebt} {debt} {card} {kind} {footer}
+         *  {subtotal} {discount} {net} {total} {prevBalance} {totalDebt} {debt} {card} {kind} {footer}
          *
          * (`{business}` و `{link}` حذف شده‌اند؛ اگر در قالب دستی مانده باشند،
          *  خالی جایگزین می‌شوند تا نام فروشگاه/لینک در پیامک نیاید.)
@@ -87,13 +87,26 @@ data class AppSettings(
                 "{link}\n" +
                 "{footer}"
 
-        const val DEFAULT_INVOICE_TEMPLATE =
+        /** قالب پیش‌فرض نسخهٔ قبلی؛ برای ارتقای خودکار تنظیمات ذخیره‌شدهٔ کاربران */
+        const val PREVIOUS_DEFAULT_INVOICE_TEMPLATE =
             "{customer}\n" +
                 "فاکتور {invoiceNo}\n" +
                 "تاریخ: {datetime}\n" +
                 "بسته: {package}\n" +
                 "مبلغ: {total}\n" +
                 "تخفیف: {discount}\n" +
+                "{debt}" +
+                "کارت: {card}\n" +
+                "{footer}"
+
+        const val DEFAULT_INVOICE_TEMPLATE =
+            "{customer}\n" +
+                "فاکتور {invoiceNo}\n" +
+                "تاریخ: {datetime}\n" +
+                "بسته: {package}\n" +
+                "مبلغ بسته: {subtotal}\n" +
+                "تخفیف: {discount}\n" +
+                "جمع: {net}\n" +
                 "{debt}" +
                 "کارت: {card}\n" +
                 "{footer}"
@@ -175,7 +188,8 @@ class Prefs(context: Context) {
                 .let { saved ->
                     // ارتقای قالب‌های پیش‌فرض نسخه‌های قبل (قالب‌های دستی دست‌نخورده می‌مانند)
                     if (saved.trim() == AppSettings.LEGACY_INVOICE_TEMPLATE.trim() ||
-                        saved.trim() == AppSettings.V03_INVOICE_TEMPLATE.trim()
+                        saved.trim() == AppSettings.V03_INVOICE_TEMPLATE.trim() ||
+                        saved.trim() == AppSettings.PREVIOUS_DEFAULT_INVOICE_TEMPLATE.trim()
                     ) defaults.invoiceTemplate else saved
                 },
             fallbackSubscriptionBase = sp.getString("fallbackSubscriptionBase", "") ?: "",

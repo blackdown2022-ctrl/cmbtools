@@ -70,23 +70,29 @@ object SmsTemplate {
         val templateSource = settings.invoiceTemplate
         val hasBalancePlaceholder = listOf("{debt}", "{prevBalance}", "{totalDebt}")
             .any { placeholder -> templateSource.contains(placeholder) }
-        val hasDiscountPlaceholder = templateSource.contains("{discount}")
-        var template = if (invoice.discountRial > 0 && !hasDiscountPlaceholder) {
-            val discountLine = "تخفیف: {discount}\n"
-            if (templateSource.contains("{footer}")) {
-                templateSource.replace("{footer}", discountLine + "{footer}")
-            } else {
-                "$templateSource\n$discountLine"
-            }
-        } else {
-            templateSource
+        var template = templateSource
+
+        // Always show the package's gross price. Older/custom templates can omit the
+        // placeholder, so insert it before discount/total rather than hiding it silently.
+        if (!template.contains("{subtotal}")) {
+            template = insertLineBeforeFirstPlaceholder(
+                template,
+                listOf("{discount}", "{net}", "{total}", "{footer}"),
+                "مبلغ بسته: {subtotal}"
+            )
+        }
+        if (invoice.discountRial > 0 && !template.contains("{discount}")) {
+            template = insertLineBeforeFirstPlaceholder(
+                template,
+                listOf("{net}", "{total}", "{footer}"),
+                "تخفیف: {discount}"
+            )
+        }
+        if (!template.contains("{net}") && !template.contains("{total}")) {
+            template = insertLineBeforeFirstPlaceholder(template, listOf("{footer}"), "جمع: {net}")
         }
         if (hasPrevDebt && !hasBalancePlaceholder) {
-            template = if (template.contains("{footer}")) {
-                template.replace("{footer}", "{debt}{footer}")
-            } else {
-                "$template\n{debt}"
-            }
+            template = insertLineBeforeFirstPlaceholder(template, listOf("{footer}"), "{debt}")
         }
 
         return template
@@ -95,6 +101,8 @@ object SmsTemplate {
             .replace("{business}", "")
             .replace("{invoiceNo}", Money.toPersian(invoice.number))
             .replace("{customer}", customer.name)
+            .replace("{subtotal}", Money.format(invoice.subtotalRial))
+            .replace("{net}", Money.format(invoice.totalRial))
             .replace("{total}", amountText)
             .replace("{discount}", if (invoice.discountRial > 0) Money.format(invoice.discountRial) else "")
             .replace("{items}", items)
@@ -110,6 +118,22 @@ object SmsTemplate {
             .replace("{link}", "")
             .replace("{footer}", settings.invoiceFooter)
             .let { cleanup(it) }
+    }
+
+    private fun insertLineBeforeFirstPlaceholder(
+        template: String,
+        placeholders: List<String>,
+        line: String
+    ): String {
+        val index = placeholders
+            .map { template.indexOf(it) }
+            .filter { it >= 0 }
+            .minOrNull()
+        if (index != null) {
+            val lineStart = template.lastIndexOf('\n', index - 1) + 1
+            return template.substring(0, lineStart) + line + "\n" + template.substring(lineStart)
+        }
+        return if (template.isBlank()) line else "$template\n$line"
     }
 
     /**

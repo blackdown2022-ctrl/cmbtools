@@ -81,12 +81,18 @@ jobs:
           ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          configured=0
           for name in ANDROID_RELEASE_KEYSTORE_BASE64 ANDROID_RELEASE_STORE_PASSWORD ANDROID_RELEASE_KEY_ALIAS ANDROID_RELEASE_KEY_PASSWORD; do
-            if [ -z "${!name}" ]; then
-              echo "e: GitHub Actions Secret $name تنظیم نشده است؛ انتشار امن متوقف شد."
-              exit 1
-            fi
+            if [ -n "${!name}" ]; then configured=$((configured + 1)); fi
           done
+          if [ "$configured" -eq 0 ]; then
+            echo "هشدار: کلید پایدار تنظیم نشده؛ این ساخت با کلید debug موقت امضا می‌شود."
+            exit 0
+          fi
+          if [ "$configured" -ne 4 ]; then
+            echo "e: فقط بخشی از Secrets امضا تنظیم شده‌اند؛ برای جلوگیری از APK ناسازگار بیلد متوقف شد."
+            exit 1
+          fi
           KEYSTORE="$RUNNER_TEMP/cmbtools-release.p12"
           printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
           test -s "$KEYSTORE"
@@ -133,10 +139,15 @@ jobs:
       - name: بررسی ثبات گواهی امضای APK
         if: github.ref == 'refs/heads/main'
         env:
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
           RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
         run: |
           set -euo pipefail
+          if [ -z "$ANDROID_RELEASE_KEYSTORE_BASE64" ]; then
+            echo "بررسی تطبیق با کلید پایدار رد شد؛ APK با debug key موقت ساخته شده است."
+            exit 0
+          fi
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           APKSIGNER="$SDK/build-tools/34.0.0/apksigner"
           APK=app/build/outputs/apk/release/app-release.apk
@@ -219,6 +230,7 @@ jobs:
         if: success() && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STABLE_SIGNING_CONFIGURED: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 != '' }}
         run: |
           VERSION="${{ steps.ver.outputs.name }}"
           CODE="${{ steps.ver.outputs.code }}"
@@ -228,10 +240,12 @@ jobs:
             exit 0
           fi
           cp app/build/outputs/apk/release/app-release.apk "tiznet-${VERSION}.apk"
-          if [ "$CODE" -eq 40 ]; then
-            NOTES="نسخهٔ انتقال یک‌باره به کلید دائمی جدید. به‌دلیل تفاوت امضای دیجیتال، این APK روی نسخهٔ قبلی به‌روزرسانی نمی‌شود: ابتدا از داخل برنامه پشتیبان کامل JSON بگیرید، برنامهٔ فعلی را حذف کنید، این APK را نصب کنید و پشتیبان را بازیابی کنید. نسخه‌های بعدی با همین کلید روی این نسخه نصب خواهند شد."
+          if [ "$STABLE_SIGNING_CONFIGURED" != "true" ]; then
+            NOTES="این APK با کلید موقت debug امضا شده است. پیش از نصب از داخل برنامه پشتیبان کامل JSON بگیرید، برنامهٔ فعلی را حذف کنید، APK را نصب و پشتیبان را بازیابی کنید. به‌دلیل موقت‌بودن کلید، برای هر نسخهٔ بعدی نیز باید همین مراحل حذف و نصب مجدد تکرار شود."
+          elif [ "$CODE" -eq 40 ]; then
+            NOTES="نسخهٔ انتقال یک‌باره به کلید دائمی جدید. این APK روی نسخهٔ قبلی به‌روزرسانی نمی‌شود: از داده‌ها پشتیبان بگیرید، برنامهٔ فعلی را حذف کنید، APK را نصب و پشتیبان را بازیابی کنید. نسخه‌های بعدی با همین کلید قابل به‌روزرسانی هستند."
           else
-            NOTES="نسخهٔ ${VERSION} با کلید دائمی؛ روی نسخهٔ جدیدِ دارای همین کلید به‌روزرسانی می‌شود. برای احتیاط قبل از به‌روزرسانی از گزارش‌ها → پشتیبان کامل یک فایل JSON بگیرید."
+            NOTES="نسخهٔ ${VERSION} با کلید دائمی؛ روی نسخهٔ دارای همین کلید به‌روزرسانی می‌شود. برای احتیاط پیش از به‌روزرسانی یک پشتیبان کامل JSON بگیرید."
           fi
           gh release create "v${VERSION}-${GITHUB_RUN_NUMBER}" \
             "tiznet-${VERSION}.apk" \
